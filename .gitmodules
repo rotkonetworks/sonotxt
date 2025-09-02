@@ -1,0 +1,6 @@
+[submodule "dashboard"]
+	path = dashboard
+	url = ./dashboard
+[submodule "rust"]
+	path = rust
+	url = ./rust
