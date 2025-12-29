@@ -1,0 +1,214 @@
+.sonotxt-notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 14px 18px;
+  background: #1a1a2e;
+  color: #fff;
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  min-width: 220px;
+  animation: sonotxt-slide-in 0.2s ease-out;
+}
+
+@keyframes sonotxt-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sonotxt-notification.sonotxt-error {
+  background: linear-gradient(135deg, #c0392b 0%, #96281b 100%);
+}
+
+.sonotxt-notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.sonotxt-notification-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.sonotxt-notification-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sonotxt-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2.5px solid rgba(108, 92, 231, 0.3);
+  border-top-color: #6c5ce7;
+  border-radius: 50%;
+  animation: sonotxt-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes sonotxt-spin {
+  to { transform: rotate(360deg); }
+}
+
+.sonotxt-check {
+  width: 24px;
+  height: 24px;
+  background: #2ecc71;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sonotxt-check svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sonotxt-player {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 12px 16px;
+  background: #1a1a2e;
+  color: #fff;
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  min-width: 320px;
+}
+
+.sonotxt-play-btn {
+  background: #6c5ce7;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: background 0.2s;
+}
+
+.sonotxt-play-btn:hover {
+  background: #5b4cdb;
+}
+
+.sonotxt-progress {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.sonotxt-progress-bar {
+  height: 100%;
+  background: #6c5ce7;
+  width: 0;
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+.sonotxt-time {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 80px;
+  text-align: center;
+}
+
+.sonotxt-speed {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sonotxt-speed:focus {
+  outline: none;
+  border-color: #6c5ce7;
+}
+
+.sonotxt-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  margin-left: 4px;
+}
+
+.sonotxt-close:hover {
+  color: #fff;
+}
+
+/* Selection tooltip - appears when text is selected */
+.sonotxt-tooltip {
+  position: absolute;
+  background: #6c5ce7;
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 2147483647;
+  box-shadow: 0 4px 12px rgba(108, 92, 231, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 0.1s, background 0.15s;
+  user-select: none;
+  animation: sonotxt-fade-in 0.15s ease-out;
+}
+
+.sonotxt-tooltip:hover {
+  background: #5b4cdb;
+  transform: scale(1.05);
+}
+
+.sonotxt-tooltip svg {
+  width: 14px;
+  height: 14px;
+}
+
+@keyframes sonotxt-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

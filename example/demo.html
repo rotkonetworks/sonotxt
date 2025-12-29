@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SonoTxt Blog Embed Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 16px;
+      color: #1a1a2e;
+    }
+
+    .meta {
+      color: #666;
+      margin-bottom: 32px;
+      font-size: 14px;
+    }
+
+    article {
+      font-size: 18px;
+    }
+
+    article p {
+      margin-bottom: 1.5em;
+    }
+
+    article h2 {
+      margin-top: 2em;
+      margin-bottom: 0.5em;
+      color: #1a1a2e;
+    }
+
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+
+    pre {
+      background: #1a1a2e;
+      color: #fff;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 1.5em 0;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+    }
+
+    .demo-section {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 24px;
+      margin: 32px 0;
+    }
+
+    .demo-section h3 {
+      margin-bottom: 16px;
+      color: #6c5ce7;
+    }
+  </style>
+</head>
+<body>
+  <h1>The Future of Audio Content</h1>
+  <div class="meta">Published on December 24, 2024 · 5 min read</div>
+
+  <!-- SonoTxt Player Widget -->
+  <div class="sonotxt-player" data-selector="article"></div>
+
+  <article>
+    <p>
+      In an era where attention is the most valuable currency, audio content has emerged as
+      a powerful medium for reaching audiences. Podcasts have exploded in popularity, and
+      audiobooks now represent a significant portion of the publishing market. But what
+      about the vast ocean of written content that exists on the web?
+    </p>
+
+    <h2>The Accessibility Challenge</h2>
+    <p>
+      Millions of articles, blog posts, and documentation pages are published daily. Yet
+      many readers struggle to find time to sit down and read them. Commuters, busy
+      professionals, and people with visual impairments all face barriers to consuming
+      written content.
+    </p>
+
+    <p>
+      Text-to-speech technology has traditionally offered a solution, but the robotic,
+      unnatural voices made long-form listening unbearable. This is where neural TTS
+      systems like Kokoro have changed the game, offering voices that are nearly
+      indistinguishable from human speakers.
+    </p>
+
+    <h2>How SonoTxt Works</h2>
+    <p>
+      SonoTxt makes it simple to add audio versions of your content. Just add a single
+      script tag and a player widget to your page:
+    </p>
+
+    <pre><code>&lt;script src="https://cdn.sonotxt.com/embed.js"
+        data-api-key="YOUR_KEY"&gt;&lt;/script&gt;
+
+&lt;div class="sonotxt-player" data-selector="article"&gt;&lt;/div&gt;</code></pre>
+
+    <p>
+      The widget automatically detects your article content and generates a natural-sounding
+      audio version on demand. Readers can control playback speed, seek through the audio,
+      and listen while doing other tasks.
+    </p>
+
+    <h2>Benefits for Publishers</h2>
+    <p>
+      Adding audio to your content increases engagement and time on page. It makes your
+      content accessible to a wider audience and provides a differentiator in a crowded
+      content landscape. Analytics show that articles with audio options see 40% higher
+      completion rates.
+    </p>
+
+    <p>
+      The pay-per-use model means you only pay for what you generate. No subscriptions,
+      no minimums. At just $0.01 per 1000 characters, a typical 2000-word article costs
+      about $0.10 to convert to audio.
+    </p>
+
+    <h2>Looking Forward</h2>
+    <p>
+      As AI voice technology continues to improve, we expect audio versions of written
+      content to become the norm rather than the exception. The future is multimodal,
+      and SonoTxt is here to help you get there.
+    </p>
+  </article>
+
+  <div class="demo-section">
+    <h3>Try the Browser Extension</h3>
+    <p>
+      Select any text on this page and press <strong>Alt+S</strong> to hear it read aloud.
+      Or right-click and choose "Listen with SonoTxt" from the context menu.
+    </p>
+  </div>
+
+  <!-- Load SonoTxt embed script -->
+  <script src="embed.js" data-api-key="test_key_demo" data-api-base="http://localhost:8080/api"></script>
+</body>
+</html>

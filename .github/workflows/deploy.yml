@@ -1,0 +1,242 @@
+name: Deploy SonoTxt
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  # Landing page (sonotxt.com) - static HTML
+  deploy-landing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download redbean
+        run: |
+          wget -q https://cosmo.zip/pub/cosmos/bin/ape-x86_64.elf -O ape
+          wget -q https://redbean.dev/redbean-2.2.com -O redbean.com
+          chmod +x ape redbean.com
+
+      - name: Pack landing page
+        run: |
+          cd landing && zip -r ../redbean.com .
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H www.rotko.net >> ~/.ssh/known_hosts
+
+      - name: Deploy landing
+        run: |
+          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-landing/
+          ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
+          set -e
+          cd /tmp/sonotxt-landing
+
+          podman stop sonotxt-landing 2>/dev/null || true
+          podman rm sonotxt-landing 2>/dev/null || true
+
+          sudo mkdir -p /srv/sonotxt/landing
+          sudo mv ape /srv/sonotxt/landing/ape
+          sudo mv redbean.com /srv/sonotxt/landing/redbean.com
+          sudo chmod +x /srv/sonotxt/landing/ape /srv/sonotxt/landing/redbean.com
+
+          # Run on port 8100 (haproxy routes sonotxt.com -> 127.0.0.1:8100)
+          podman run -d \
+            --name sonotxt-landing \
+            --restart=always \
+            -p 127.0.0.1:8100:80 \
+            -v /srv/sonotxt/landing/redbean.com:/redbean.com:ro \
+            -v /srv/sonotxt/landing/ape:/usr/bin/ape:ro \
+            alpine:latest /usr/bin/ape /redbean.com -vv -p 80
+
+          sleep 2
+          curl -sf http://127.0.0.1:8100/ > /dev/null && echo "Landing deploy OK"
+          EOF
+
+  # Dashboard (app.sonotxt.com) - Vite SPA
+  deploy-dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Build dashboard
+        run: |
+          cd dashboard
+          bun install
+          bun run build
+
+      - name: Download redbean
+        run: |
+          wget -q https://cosmo.zip/pub/cosmos/bin/ape-x86_64.elf -O ape
+          wget -q https://redbean.dev/redbean-2.2.com -O redbean.com
+          chmod +x ape redbean.com
+
+      - name: Pack dashboard
+        run: |
+          cd dashboard/dist && zip -r ../../redbean.com .
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H www.rotko.net >> ~/.ssh/known_hosts
+
+      - name: Deploy dashboard
+        run: |
+          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-dashboard/
+          ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
+          set -e
+          cd /tmp/sonotxt-dashboard
+
+          podman stop sonotxt-dashboard 2>/dev/null || true
+          podman rm sonotxt-dashboard 2>/dev/null || true
+
+          sudo mkdir -p /srv/sonotxt/dashboard
+          sudo mv ape /srv/sonotxt/dashboard/ape
+          sudo mv redbean.com /srv/sonotxt/dashboard/redbean.com
+          sudo chmod +x /srv/sonotxt/dashboard/ape /srv/sonotxt/dashboard/redbean.com
+
+          # Run on port 8101 (haproxy routes app.sonotxt.com -> 127.0.0.1:8101)
+          podman run -d \
+            --name sonotxt-dashboard \
+            --restart=always \
+            -p 127.0.0.1:8101:80 \
+            -v /srv/sonotxt/dashboard/redbean.com:/redbean.com:ro \
+            -v /srv/sonotxt/dashboard/ape:/usr/bin/ape:ro \
+            alpine:latest /usr/bin/ape /redbean.com -vv -p 80
+
+          sleep 2
+          curl -sf http://127.0.0.1:8101/ > /dev/null && echo "Dashboard deploy OK"
+          EOF
+
+  # API server (api.sonotxt.com) - Rust binary
+  deploy-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Build API server
+        run: |
+          cd rust
+          cargo build --release
+          strip target/release/sonotxt
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H www.rotko.net >> ~/.ssh/known_hosts
+
+      - name: Deploy API
+        run: |
+          scp -i ~/.ssh/id_deploy rust/target/release/sonotxt deploy@www.rotko.net:/tmp/sonotxt-api
+          ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
+          set -e
+
+          # Stop existing
+          sudo systemctl stop sonotxt-api 2>/dev/null || true
+
+          # Install binary
+          sudo mkdir -p /srv/sonotxt/api
+          sudo mv /tmp/sonotxt-api /srv/sonotxt/api/sonotxt
+          sudo chmod +x /srv/sonotxt/api/sonotxt
+
+          # Create systemd service if not exists
+          if [ ! -f /etc/systemd/system/sonotxt-api.service ]; then
+            sudo tee /etc/systemd/system/sonotxt-api.service > /dev/null <<'SERVICE'
+          [Unit]
+          Description=SonoTxt API Server
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=sonotxt
+          WorkingDirectory=/srv/sonotxt/api
+          ExecStart=/srv/sonotxt/api/sonotxt
+          Restart=always
+          RestartSec=5
+          Environment=RUST_LOG=info
+          Environment=DATABASE_URL=postgres://sonotxt:sonotxt@localhost/sonotxt
+          Environment=LISTEN_ADDR=127.0.0.1:8102
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE
+            sudo systemctl daemon-reload
+            sudo systemctl enable sonotxt-api
+          fi
+
+          # Start
+          sudo systemctl start sonotxt-api
+          sleep 2
+          curl -sf http://127.0.0.1:8102/api/voices > /dev/null && echo "API deploy OK"
+          EOF
+
+  # CDN (cdn.sonotxt.com) - embed.js + static files
+  deploy-cdn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare CDN files
+        run: |
+          mkdir -p cdn
+          cp example/embed.js cdn/embed.js
+          # Update API base to production
+          sed -i "s|http://localhost:8080/api|https://api.sonotxt.com|g" cdn/embed.js
+
+      - name: Download redbean
+        run: |
+          wget -q https://cosmo.zip/pub/cosmos/bin/ape-x86_64.elf -O ape
+          wget -q https://redbean.dev/redbean-2.2.com -O redbean.com
+          chmod +x ape redbean.com
+
+      - name: Pack CDN
+        run: |
+          cd cdn && zip -r ../redbean.com .
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H www.rotko.net >> ~/.ssh/known_hosts
+
+      - name: Deploy CDN
+        run: |
+          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-cdn/
+          ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
+          set -e
+          cd /tmp/sonotxt-cdn
+
+          podman stop sonotxt-cdn 2>/dev/null || true
+          podman rm sonotxt-cdn 2>/dev/null || true
+
+          sudo mkdir -p /srv/sonotxt/cdn
+          sudo mv ape /srv/sonotxt/cdn/ape
+          sudo mv redbean.com /srv/sonotxt/cdn/redbean.com
+          sudo chmod +x /srv/sonotxt/cdn/ape /srv/sonotxt/cdn/redbean.com
+
+          # Run on port 8103 (haproxy routes cdn.sonotxt.com -> 127.0.0.1:8103)
+          podman run -d \
+            --name sonotxt-cdn \
+            --restart=always \
+            -p 127.0.0.1:8103:80 \
+            -v /srv/sonotxt/cdn/redbean.com:/redbean.com:ro \
+            -v /srv/sonotxt/cdn/ape:/usr/bin/ape:ro \
+            alpine:latest /usr/bin/ape /redbean.com -vv -p 80
+
+          sleep 2
+          curl -sf http://127.0.0.1:8103/embed.js > /dev/null && echo "CDN deploy OK"
+          EOF
