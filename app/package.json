@@ -1,0 +1,25 @@
+{
+  "name": "sonotxt-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Text to speech web app - paste text, get audio instantly",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1",
+    "solid-js": "^1.9.10"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@unocss/reset": "^66.5.12",
+    "typescript": "~5.9.3",
+    "unocss": "^66.5.12",
+    "vite": "^7.2.4",
+    "vite-plugin-solid": "^2.11.10"
+  }
+}

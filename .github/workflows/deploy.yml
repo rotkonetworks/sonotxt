@@ -63,13 +63,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          cache-dependency-path: app/pnpm-lock.yaml
 
       - name: Build dashboard
         run: |
-          cd dashboard
-          bun install
-          bun run build
+          cd app
+          pnpm install
+          pnpm build
 
       - name: Download redbean
         run: |
@@ -79,7 +87,7 @@ jobs:
 
       - name: Pack dashboard
         run: |
-          cd dashboard/dist && zip -r ../../redbean.com .
+          cd app/dist && zip -r ../../redbean.com .
 
       - name: Setup SSH
         run: |
@@ -192,9 +200,7 @@ jobs:
       - name: Prepare CDN files
         run: |
           mkdir -p cdn
-          cp example/embed.js cdn/embed.js
-          # Update API base to production
-          sed -i "s|http://localhost:8080/api|https://api.sonotxt.com|g" cdn/embed.js
+          cp app/public/embed.js cdn/embed.js
 
       - name: Download redbean
         run: |
