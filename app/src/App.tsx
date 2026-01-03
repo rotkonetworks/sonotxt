@@ -1,9 +1,8 @@
-import { createSignal, For, Show, onMount, lazy, Suspense, onCleanup } from 'solid-js'
+import { createSignal, For, Show, onMount, lazy, Suspense, onCleanup, createMemo } from 'solid-js'
 import { ToastContainer, showToast } from './components/Toast'
 
 const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
 
-// Lazy load auth modal
 const AuthModal = lazy(() => import('./components/AuthModal'))
 
 interface HistoryItem {
@@ -11,6 +10,7 @@ interface HistoryItem {
   url: string
   duration: number
   date: string
+  sourceUrl?: string
 }
 
 interface User {
@@ -28,57 +28,110 @@ interface Voice {
   sample_url?: string
 }
 
-const DEFAULT_VOICES: Voice[] = [
-  { id: 'af_bella', name: 'Bella', accent: 'US', gender: 'F' },
-  { id: 'af_nicole', name: 'Nicole', accent: 'US', gender: 'F' },
-  { id: 'am_adam', name: 'Adam', accent: 'US', gender: 'M' },
-  { id: 'am_michael', name: 'Michael', accent: 'US', gender: 'M' },
-  { id: 'bf_emma', name: 'Emma', accent: 'UK', gender: 'F' },
-  { id: 'bm_george', name: 'George', accent: 'UK', gender: 'M' },
-]
+// All available voices organized by category
+const ALL_VOICES: Record<string, Voice[]> = {
+  'American Female': [
+    { id: 'af_bella', name: 'Bella', accent: 'US', gender: 'F' },
+    { id: 'af_nicole', name: 'Nicole', accent: 'US', gender: 'F' },
+    { id: 'af_sarah', name: 'Sarah', accent: 'US', gender: 'F' },
+    { id: 'af_sky', name: 'Sky', accent: 'US', gender: 'F' },
+    { id: 'af_nova', name: 'Nova', accent: 'US', gender: 'F' },
+    { id: 'af_river', name: 'River', accent: 'US', gender: 'F' },
+  ],
+  'American Male': [
+    { id: 'am_adam', name: 'Adam', accent: 'US', gender: 'M' },
+    { id: 'am_michael', name: 'Michael', accent: 'US', gender: 'M' },
+    { id: 'am_eric', name: 'Eric', accent: 'US', gender: 'M' },
+    { id: 'am_liam', name: 'Liam', accent: 'US', gender: 'M' },
+  ],
+  'British Female': [
+    { id: 'bf_emma', name: 'Emma', accent: 'UK', gender: 'F' },
+    { id: 'bf_alice', name: 'Alice', accent: 'UK', gender: 'F' },
+    { id: 'bf_lily', name: 'Lily', accent: 'UK', gender: 'F' },
+  ],
+  'British Male': [
+    { id: 'bm_george', name: 'George', accent: 'UK', gender: 'M' },
+    { id: 'bm_daniel', name: 'Daniel', accent: 'UK', gender: 'M' },
+    { id: 'bm_lewis', name: 'Lewis', accent: 'UK', gender: 'M' },
+  ],
+}
+
+const FEATURED_VOICES = ['af_river', 'af_sarah', 'am_liam', 'am_eric', 'bf_lily', 'bm_lewis']
 
 export default function App() {
+  const [mode, setMode] = createSignal<'text' | 'url'>('text')
   const [text, setText] = createSignal('')
-  const [voice, setVoice] = createSignal('af_bella')
+  const [urlInput, setUrlInput] = createSignal('')
+  const [extractedTitle, setExtractedTitle] = createSignal('')
+  const [voice, setVoice] = createSignal('af_river')
   const [loading, setLoading] = createSignal(false)
+  const [extracting, setExtracting] = createSignal(false)
   const [status, setStatus] = createSignal('')
   const [audioUrl, setAudioUrl] = createSignal('')
+  const [audioTitle, setAudioTitle] = createSignal('')
   const [audioDuration, setAudioDuration] = createSignal(0)
+  const [currentTime, setCurrentTime] = createSignal(0)
+  const [isPlaying, setIsPlaying] = createSignal(false)
   const [history, setHistory] = createSignal<HistoryItem[]>([])
   const [stats, setStats] = createSignal({ generated: 0, chars: 0 })
   const [freeRemaining, setFreeRemaining] = createSignal(1000)
   const [showAuth, setShowAuth] = createSignal(false)
   const [user, setUser] = createSignal<User | null>(null)
   const [dragover, setDragover] = createSignal(false)
-  const [showVoices, setShowVoices] = createSignal(false)
-  const [previewLoading, setPreviewLoading] = createSignal<string | null>(null)
-  const [previewAudio, setPreviewAudio] = createSignal<HTMLAudioElement | null>(null)
-  const [voices, setVoices] = createSignal<Voice[]>(DEFAULT_VOICES)
+  const [showAllVoices, setShowAllVoices] = createSignal(false)
+  const [previewingVoice, setPreviewingVoice] = createSignal<string | null>(null)
+  const [samplesBaseUrl, setSamplesBaseUrl] = createSignal('')
+  const [showLimitError, setShowLimitError] = createSignal(false)
+  const [historyFilter, setHistoryFilter] = createSignal('')
+  const [isDragging, setIsDragging] = createSignal(false)
 
   let textareaRef: HTMLTextAreaElement | undefined
+  let audioRef: HTMLAudioElement | undefined
+  let previewAudioRef: HTMLAudioElement | undefined
+
+  const featuredVoices = createMemo(() => {
+    const all = Object.values(ALL_VOICES).flat()
+    return all.filter(v => FEATURED_VOICES.includes(v.id))
+  })
+
+  const selectedVoiceName = createMemo(() => {
+    const all = Object.values(ALL_VOICES).flat()
+    const found = all.find(v => v.id === voice())
+    return found?.name || voice()
+  })
+
+  const filteredHistory = createMemo(() => {
+    const filter = historyFilter().toLowerCase().trim()
+    if (!filter) return history()
+    return history().filter(item => item.text.toLowerCase().includes(filter))
+  })
 
   async function fetchVoices() {
     try {
       const res = await fetch(`${API}/api/voices`)
       const data = await res.json()
-      if (data.voices) {
-        // Map API response to our Voice format with sample URLs
-        const voicesWithMeta = data.voices.map((v: { id: string, sample_url: string }) => {
-          const defaultVoice = DEFAULT_VOICES.find(dv => dv.id === v.id)
-          return {
-            id: v.id,
-            name: defaultVoice?.name || v.id.slice(3),
-            accent: defaultVoice?.accent || (v.id.startsWith('af') || v.id.startsWith('am') ? 'US' : 'UK'),
-            gender: v.id.includes('f_') ? 'F' : 'M',
-            sample_url: v.sample_url,
-          }
-        }).filter((v: Voice) => DEFAULT_VOICES.some(dv => dv.id === v.id))
-        setVoices(voicesWithMeta)
+      if (data.samples_base_url) {
+        setSamplesBaseUrl(data.samples_base_url)
       }
     } catch {}
   }
 
-  // Load from localStorage and setup keyboard shortcuts
+  function previewVoice(voiceId: string) {
+    if (!samplesBaseUrl() || !previewAudioRef) return
+    const url = `${samplesBaseUrl()}/${voiceId}.mp3`
+    previewAudioRef.src = url
+    previewAudioRef.play().catch(() => {})
+    setPreviewingVoice(voiceId)
+  }
+
+  function stopPreview() {
+    if (previewAudioRef) {
+      previewAudioRef.pause()
+      previewAudioRef.currentTime = 0
+    }
+    setPreviewingVoice(null)
+  }
+
   onMount(() => {
     const h = localStorage.getItem('sonotxt_history')
     if (h) setHistory(JSON.parse(h))
@@ -91,15 +144,18 @@ export default function App() {
 
     fetchVoices()
 
-    // Global keyboard shortcuts
     const handleKeydown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault()
-        if (text().trim() && !loading()) generate()
+        if (mode() === 'url' && urlInput().trim() && !extracting()) {
+          extractUrl()
+        } else if (text().trim() && !loading()) {
+          generate()
+        }
       }
       if (e.key === 'Escape') {
         if (showAuth()) setShowAuth(false)
-        if (showVoices()) setShowVoices(false)
+        if (showAllVoices()) setShowAllVoices(false)
       }
     }
     document.addEventListener('keydown', handleKeydown)
@@ -125,27 +181,55 @@ export default function App() {
   }
 
   const charCount = () => text().length
-  const charClass = () => {
-    const len = charCount()
-    if (len > 1000) return 'text-red-400'
-    if (len > 800) return 'text-yellow-400'
-    return 'text-white/50'
-  }
 
-  const selectedVoice = () => voices().find(v => v.id === voice())
+  async function extractUrl() {
+    const url = urlInput().trim()
+    if (!url) return
+
+    const fullUrl = url.startsWith('http') ? url : `https://${url}`
+
+    setExtracting(true)
+    setStatus('FETCHING...')
+
+    try {
+      const res = await fetch(`${API}/api/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: fullUrl }),
+      })
+
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(e.error || 'Failed to extract')
+      }
+
+      const data = await res.json()
+      setText(data.text)
+      setExtractedTitle(data.title || '')
+      setMode('text')
+      setStatus('')
+      showToast(`Extracted ${data.char_count} chars`, 'success')
+    } catch (e: any) {
+      showToast(e.message, 'error')
+      setStatus('ERROR')
+    }
+
+    setExtracting(false)
+  }
 
   async function generate() {
     const t = text().trim()
     if (!t) return
 
     if (!user() && t.length > 1000) {
-      showToast('Free tier limited to 1000 chars. Login for more!', 'error')
+      showToast('Free tier limited to 1000 chars', 'error')
       return
     }
 
     setLoading(true)
-    setStatus('Submitting...')
+    setStatus('CONNECTING...')
     setAudioUrl('')
+    setShowLimitError(false)
 
     try {
       const res = await fetch(`${API}/api/tts`, {
@@ -156,18 +240,26 @@ export default function App() {
 
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        // Check if it's a free tier limit error
+        if (e.error?.includes('Free tier limit') || e.error?.includes('limit exceeded')) {
+          setShowLimitError(true)
+          setStatus('LIMIT')
+          setLoading(false)
+          return
+        }
         throw new Error(e.error || 'Request failed')
       }
 
       const { job_id, free_tier_remaining } = await res.json()
-      if (free_tier_remaining !== undefined) {
-        setFreeRemaining(free_tier_remaining)
-      }
+      if (free_tier_remaining !== undefined) setFreeRemaining(free_tier_remaining)
 
       const result = await pollJob(job_id)
       setAudioUrl(result.url)
+      setAudioTitle(t.slice(0, 60) + (t.length > 60 ? '...' : ''))
       setAudioDuration(result.duration_seconds)
-      setStatus('')
+      setStatus('READY')
+      // Autoplay
+      setTimeout(() => audioRef?.play(), 100)
 
       addToHistory(t, result.url, result.duration_seconds)
       setStats(s => {
@@ -175,11 +267,9 @@ export default function App() {
         localStorage.setItem('sonotxt_stats', JSON.stringify(updated))
         return updated
       })
-
-      showToast('Audio generated!', 'success')
     } catch (e: any) {
       showToast(e.message, 'error')
-      setStatus('')
+      setStatus('ERROR')
     }
 
     setLoading(false)
@@ -187,65 +277,33 @@ export default function App() {
 
   async function pollJob(jobId: string) {
     for (let i = 0; i < 60; i++) {
-      await sleep(1000)
+      await new Promise(r => setTimeout(r, 1000))
       const res = await fetch(`${API}/api/status?job_id=${jobId}`)
       const data = await res.json()
 
-      if (data.status === 'Complete') {
-        return data
-      } else if (data.status === 'Failed') {
-        throw new Error(data.reason || 'Generation failed')
-      }
+      if (data.status === 'Complete') return data
+      if (data.status === 'Failed') throw new Error(data.reason || 'Generation failed')
 
-      setStatus(`${data.status}...`)
+      setStatus(data.status.toUpperCase() + '...')
     }
     throw new Error('Timeout')
-  }
-
-  function previewVoice(voiceId: string) {
-    // Stop any playing preview
-    previewAudio()?.pause()
-
-    // Find voice with sample URL
-    const v = voices().find(voice => voice.id === voiceId)
-    if (!v?.sample_url) {
-      showToast('Sample not available', 'error')
-      return
-    }
-
-    setPreviewLoading(voiceId)
-
-    const audio = new Audio(v.sample_url)
-    audio.oncanplaythrough = () => {
-      setPreviewLoading(null)
-      setPreviewAudio(audio)
-      audio.play()
-    }
-    audio.onerror = () => {
-      setPreviewLoading(null)
-      showToast('Failed to load sample', 'error')
-    }
-  }
-
-  function selectVoice(voiceId: string) {
-    setVoice(voiceId)
-    setShowVoices(false)
   }
 
   function addToHistory(t: string, url: string, duration: number) {
     setHistory(h => {
       const updated = [
-        { text: t.slice(0, 100), url, duration, date: new Date().toISOString() },
+        {
+          text: t.slice(0, 100),
+          url,
+          duration,
+          date: new Date().toISOString(),
+          sourceUrl: urlInput() || undefined
+        },
         ...h.slice(0, 9),
       ]
       localStorage.setItem('sonotxt_history', JSON.stringify(updated))
       return updated
     })
-  }
-
-  function playFromHistory(item: HistoryItem) {
-    setAudioUrl(item.url)
-    setAudioDuration(item.duration)
   }
 
   function handleDrop(e: DragEvent) {
@@ -254,6 +312,7 @@ export default function App() {
     const file = e.dataTransfer?.files[0]
     if (file && (file.type === 'text/plain' || file.name.endsWith('.txt'))) {
       file.text().then(setText)
+      setMode('text')
     }
   }
 
@@ -267,292 +326,536 @@ export default function App() {
   function logout() {
     setUser(null)
     localStorage.removeItem('sonotxt_token')
-    showToast('Logged out', 'info')
+    showToast('Logged out', 'success')
   }
 
-  function formatDate(iso: string) {
-    const d = new Date(iso)
-    const diff = Date.now() - d.getTime()
-    if (diff < 60000) return 'now'
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m`
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`
-    return d.toLocaleDateString()
+  function formatTime(s: number) {
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+  function togglePlay() {
+    if (!audioRef) return
+    if (audioRef.paused) audioRef.play()
+    else audioRef.pause()
+  }
+
+  function stop() {
+    if (!audioRef) return
+    audioRef.pause()
+    audioRef.currentTime = 0
+    setIsPlaying(false)
+  }
+
+  let progressTrackRef: HTMLDivElement | undefined
+
+  function seekFromEvent(e: MouseEvent) {
+    if (!audioRef || !progressTrackRef) return
+    const rect = progressTrackRef.getBoundingClientRect()
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    audioRef.currentTime = pct * audioDuration()
+  }
+
+  function handleProgressMouseDown(e: MouseEvent) {
+    if (!audioUrl()) return
+    setIsDragging(true)
+    seekFromEvent(e)
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging()) seekFromEvent(e)
+    }
+    const handleMouseUp = () => {
+      setIsDragging(false)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
+
+  const progressPct = () => audioDuration() ? (currentTime() / audioDuration()) * 100 : 0
+
+  function loadAndPlay(url: string, title: string, duration: number) {
+    setAudioUrl(url)
+    setAudioTitle(title)
+    setAudioDuration(duration)
+    setTimeout(() => audioRef?.play(), 100)
+  }
+
+  async function downloadAudio() {
+    const url = audioUrl()
+    if (!url) return
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `sonotxt-${Date.now()}.mp3`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch {
+      showToast('Download failed', 'error')
+    }
+  }
+
+  async function shareAudio() {
+    const url = audioUrl()
+    if (!url) return
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'SonoTxt Audio', url })
+      } catch {}
+    } else {
+      await navigator.clipboard.writeText(url)
+      showToast('Link copied!', 'success')
+    }
+  }
 
   return (
-    <div class="min-h-screen bg-[#0d1117] text-white flex flex-col">
-      {/* Header */}
-      <header class="flex justify-between items-center px-6 py-4 border-b border-white/10">
-        <a href="/" class="flex items-center gap-2 text-lg font-semibold">
-          <svg class="w-6 h-6" viewBox="0 0 128 128">
-            <rect width="128" height="128" fill="#be185d"/>
-            <path d="M40 44h8v40h-8zM56 36h8v56h-8zM72 48h8v32h-8zM88 40h8v48h-8z" fill="#fff"/>
-          </svg>
-          SonoTxt
-        </a>
-        <div class="flex items-center gap-3">
-          <Show when={user()} fallback={
-            <button onClick={() => setShowAuth(true)} class="text-sm text-white/50 hover:text-white px-3 py-2 hover:bg-white/5">
-              Login
-            </button>
-          }>
-            <span class="text-sm text-white/50">{user()!.nickname || user()!.email}</span>
-            <button onClick={logout} class="text-sm text-white/50 hover:text-white">Logout</button>
-          </Show>
-          <span class="text-xs bg-[#161b22] border border-white/10 px-3 py-1.5 text-white/50">
-            {user() ? `$${user()!.balance.toFixed(2)}` : `Free: ${freeRemaining()}/day`}
-          </span>
+    <div class="min-h-screen flex flex-col items-center justify-center p-2 sm:p-4">
+      {/* Hidden preview audio */}
+      <audio
+        ref={previewAudioRef}
+        onEnded={() => setPreviewingVoice(null)}
+        class="hidden"
+      />
+
+      {/* Main panel - responsive width */}
+      <div class="panel w-full max-w-[95vw] sm:max-w-xl">
+        {/* Title bar - draggable */}
+        <div class="titlebar cursor-move select-none">
+          {/* Left: Window controls */}
+          <div class="flex gap-0.5">
+            <button class="w-3 h-3 bg-lcd-red/80 hover:bg-lcd-red" title="Close" />
+            <button class="w-3 h-3 bg-lcd-yellow/80 hover:bg-lcd-yellow" title="Minimize" />
+            <button class="w-3 h-3 bg-lcd-green/80 hover:bg-lcd-green" title="Maximize" />
+          </div>
+
+          {/* Center: Logo + drag area */}
+          <div class="flex-1 flex items-center justify-center gap-2">
+            <div class="i-mdi-waveform text-accent w-4 h-4" />
+            <span class="text-text-bright">SONOTXT</span>
+            <Show when={user()}>
+              <span class="text-text-dim hidden sm:inline">-</span>
+              <span class="text-lcd-green text-xs truncate max-w-24 hidden sm:inline">
+                {user()!.nickname || user()!.email?.split('@')[0]}
+              </span>
+            </Show>
+          </div>
+
+          {/* Right: Balance + Login/Logout */}
+          <div class="flex items-center gap-2">
+            <span class="text-lcd-yellow text-xs">
+              {user() ? `$${user()!.balance.toFixed(2)}` : `${freeRemaining()}`}
+            </span>
+            <Show when={user()} fallback={
+              <button onClick={() => setShowAuth(true)} class="btn-win text-xs px-2" title="Login">
+                <span class="i-mdi-login w-3 h-3" />
+              </button>
+            }>
+              <button onClick={logout} class="btn-win text-xs px-2" title="Logout">
+                <span class="i-mdi-logout w-3 h-3" />
+              </button>
+            </Show>
+          </div>
         </div>
-      </header>
 
-      {/* Main */}
-      <main class="flex-1 flex flex-col items-center px-6 py-12 max-w-[800px] mx-auto w-full">
-        <h1 class="text-2xl font-semibold mb-8">
-          Paste text, get audio <span class="text-white/50 font-normal">instantly</span>
-        </h1>
-
-        {/* Input */}
-        <div
-          class={`w-full bg-[#161b22] border mb-4 ${dragover() ? 'border-primary' : 'border-white/10'}`}
-          onDragOver={(e) => { e.preventDefault(); setDragover(true) }}
-          onDragLeave={() => setDragover(false)}
-          onDrop={handleDrop}
-        >
-          <textarea
-            ref={textareaRef}
-            class="w-full min-h-[180px] p-5 bg-transparent text-white text-base leading-relaxed resize-y outline-none placeholder:text-white/40"
-            placeholder="Paste or type your text here... or drop a .txt file"
-            value={text()}
-            onInput={(e) => setText(e.currentTarget.value)}
-          />
-          <div class="flex justify-between items-center px-4 py-3 border-t border-white/10 bg-black/20">
-            <div class="flex gap-4 items-center text-sm">
-              <span class={charClass()}>{charCount().toLocaleString()} chars</span>
-
-              {/* Voice selector dropdown */}
-              <div class="relative group">
-                <button class="flex items-center gap-2 bg-[#0d1117] border border-white/10 text-white px-3 py-2 text-sm hover:border-primary transition-colors">
-                  <svg class="w-4 h-4 text-white/50" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                  </svg>
-                  {selectedVoice()?.name} ({selectedVoice()?.accent})
-                  <svg class="w-3 h-3 text-white/40" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M7 10l5 5 5-5z"/>
-                  </svg>
-                </button>
-
-                {/* Dropdown on hover */}
-                <div class="absolute bottom-full left-0 mb-2 w-72 bg-[#161b22] border border-white/10 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                  <div class="p-2 max-h-80 overflow-y-auto">
-                    <For each={voices()}>{v => (
-                      <div
-                        class={`flex items-center justify-between p-2 cursor-pointer transition-all ${
-                          voice() === v.id ? 'bg-primary/20' : 'hover:bg-white/5'
-                        }`}
-                        onClick={() => setVoice(v.id)}
-                      >
-                        <div class="flex items-center gap-2">
-                          <div class={`w-6 h-6 flex items-center justify-center text-xs font-medium ${
-                            v.gender === 'F' ? 'bg-primary/20 text-primary' : 'bg-white/10 text-white/70'
-                          }`}>
-                            {v.gender}
-                          </div>
-                          <div>
-                            <div class="text-sm font-medium">{v.name}</div>
-                            <div class="text-xs text-white/40">{v.accent}</div>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={(e) => { e.stopPropagation(); previewVoice(v.id) }}
-                          disabled={previewLoading() === v.id}
-                          class="p-1.5 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
-                          title="Preview"
-                        >
-                          <Show when={previewLoading() === v.id} fallback={
-                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M8 5v14l11-7z"/>
-                            </svg>
-                          }>
-                            <div class="w-3 h-3 border-2 border-white/30 border-t-white animate-spin" />
-                          </Show>
-                        </button>
-                      </div>
-                    )}</For>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button
-              class="btn-primary flex items-center gap-2"
-              disabled={loading() || !text().trim()}
-              onClick={generate}
-              title="Ctrl+Enter"
-            >
-              <Show when={loading()} fallback={
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
-                </svg>
+        {/* LCD Display */}
+        <div class="lcd p-2 sm:p-3 m-2">
+          <div class="flex justify-center items-center mb-2 text-[10px] sm:text-xs">
+            <Show when={loading() || extracting()} fallback={
+              <Show when={audioUrl()} fallback={
+                <span class="text-lcd-green opacity-60">READY</span>
               }>
-                <div class="w-4 h-4 border-2 border-white/30 border-t-white animate-spin" />
+                <span class="text-lcd-yellow">{isPlaying() ? 'PLAYING' : 'PAUSED'}</span>
               </Show>
-              {loading() ? 'Generating...' : 'Generate'}
+            }>
+              <span class="animate-pulse">{status()}</span>
+            </Show>
+          </div>
+
+          {/* Extracted title */}
+          <Show when={extractedTitle()}>
+            <div class="text-[10px] sm:text-xs text-lcd-green mb-2 truncate" title={extractedTitle()}>
+              {extractedTitle()}
+            </div>
+          </Show>
+
+          {/* Now playing title */}
+          <Show when={audioTitle()}>
+            <div class="text-[10px] sm:text-xs text-lcd-green mb-2 truncate text-center" title={audioTitle()}>
+              {audioTitle()}
+            </div>
+          </Show>
+
+          {/* Progress bar - always visible, draggable */}
+          <div class="flex items-center gap-2 sm:gap-3 mb-2">
+            <span class="text-[10px] sm:text-xs w-8 sm:w-10 text-lcd-pink font-mono">{formatTime(currentTime())}</span>
+            <div
+              ref={progressTrackRef}
+              class={`flex-1 h-5 relative select-none ${audioUrl() ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+              style={{
+                background: 'linear-gradient(180deg, #010409 0%, #0d1117 100%)',
+                border: '2px solid',
+                'border-color': '#010409 #30363d #30363d #010409',
+                'box-shadow': 'inset 0 2px 4px rgba(0,0,0,0.5)',
+              }}
+              onMouseDown={handleProgressMouseDown}
+            >
+              {/* Fill */}
+              <div
+                style={{
+                  width: `${progressPct()}%`,
+                  height: '100%',
+                  background: 'linear-gradient(180deg, #f472b6 0%, #ec4899 30%, #be185d 70%, #9f1239 100%)',
+                  'box-shadow': '0 0 8px rgba(236, 72, 153, 0.6), inset 0 1px 0 rgba(255,255,255,0.2)',
+                  transition: isDragging() ? 'none' : 'width 0.1s ease-out',
+                }}
+              />
+              {/* Draggable thumb */}
+              <Show when={audioUrl()}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: `calc(${progressPct()}% - 6px)`,
+                    transform: 'translateY(-50%)',
+                    width: '12px',
+                    height: '18px',
+                    background: 'linear-gradient(180deg, #f472b6 0%, #be185d 100%)',
+                    border: '1px solid',
+                    'border-color': '#f9a8d4 #9f1239 #9f1239 #f9a8d4',
+                    'box-shadow': '0 2px 4px rgba(0,0,0,0.3)',
+                    cursor: 'grab',
+                  }}
+                />
+              </Show>
+            </div>
+            <span class="text-[10px] sm:text-xs w-8 sm:w-10 text-right text-lcd-pink font-mono">{formatTime(audioDuration())}</span>
+          </div>
+
+          {/* Transport controls - always visible */}
+          <div class="flex justify-center gap-1 mb-2">
+            <button class="btn-win p-1 sm:p-2" onClick={() => audioRef && (audioRef.currentTime -= 10)} title="Back 10s" disabled={!audioUrl()}>
+              <span class="i-mdi-rewind-10 w-3 h-3 sm:w-4 sm:h-4" />
+            </button>
+            <button class="btn-win p-1 sm:p-2" onClick={stop} title="Stop" disabled={!audioUrl()}>
+              <span class="i-mdi-stop w-3 h-3 sm:w-4 sm:h-4" />
+            </button>
+            <button class="btn-win primary p-1 sm:p-2" onClick={togglePlay} title={isPlaying() ? 'Pause' : 'Play'} disabled={!audioUrl()}>
+              <span class={isPlaying() ? 'i-mdi-pause w-4 h-4 sm:w-5 sm:h-5' : 'i-mdi-play w-4 h-4 sm:w-5 sm:h-5'} />
+            </button>
+            <button class="btn-win p-1 sm:p-2" onClick={() => audioRef && (audioRef.currentTime += 10)} title="Fwd 10s" disabled={!audioUrl()}>
+              <span class="i-mdi-fast-forward-10 w-3 h-3 sm:w-4 sm:h-4" />
+            </button>
+            <div class="w-px h-4 bg-border-light mx-1" />
+            <button class="btn-win p-1 sm:p-2" onClick={downloadAudio} title="Download" disabled={!audioUrl()}>
+              <span class="i-mdi-download w-3 h-3 sm:w-4 sm:h-4" />
+            </button>
+            <button class="btn-win p-1 sm:p-2" onClick={shareAudio} title="Share" disabled={!audioUrl()}>
+              <span class="i-mdi-share-variant w-3 h-3 sm:w-4 sm:h-4" />
+            </button>
+          </div>
+
+          {/* Hidden audio element */}
+          <audio
+            ref={audioRef}
+            src={audioUrl()}
+            onTimeUpdate={() => setCurrentTime(audioRef?.currentTime || 0)}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => { setIsPlaying(false); setCurrentTime(0) }}
+            onLoadedMetadata={() => setAudioDuration(audioRef?.duration || 0)}
+            class="hidden"
+          />
+        </div>
+
+        {/* Mode tabs */}
+        <div class="px-2 pb-2">
+          <div class="flex gap-1">
+            <button
+              class={`btn-win text-[10px] sm:text-xs flex-1 ${mode() === 'text' ? 'primary' : ''}`}
+              onClick={() => setMode('text')}
+            >
+              <span class="i-mdi-text w-3 h-3 mr-1" />
+              TEXT
+            </button>
+            <button
+              class={`btn-win text-[10px] sm:text-xs flex-1 ${mode() === 'url' ? 'primary' : ''}`}
+              onClick={() => setMode('url')}
+            >
+              <span class="i-mdi-web w-3 h-3 mr-1" />
+              URL
             </button>
           </div>
         </div>
 
-        <p class="text-sm text-white/40">
-          Drop a .txt file or paste · <kbd class="px-1.5 py-0.5 bg-white/10 text-xs">Ctrl</kbd>+<kbd class="px-1.5 py-0.5 bg-white/10 text-xs">Enter</kbd> to generate
-        </p>
-
-        {/* Status */}
-        <div class="w-full mt-4">
-          <Show when={loading()}>
-            <div class="flex items-center gap-3 p-4 bg-[#161b22] border border-white/10">
-              <div class="w-4 h-4 border-2 border-white/20 border-t-primary animate-spin" />
-              <span class="text-sm">{status()}</span>
-            </div>
-          </Show>
-
-          <Show when={audioUrl()}>
-            <div class="bg-[#161b22] border border-white/10 p-4">
-              <div class="flex justify-between items-center mb-3">
-                <span class="text-sm text-white/50">
-                  {Math.round(audioDuration())}s · {charCount().toLocaleString()} chars
-                </span>
-                <a
-                  href={audioUrl()}
-                  download="audio.mp3"
-                  class="text-sm text-primary hover:bg-primary/10 px-2 py-1"
-                >
-                  Download
-                </a>
+        {/* Voice selector */}
+        <div class="px-2 pb-2">
+          <div class="panel-inset p-2">
+            <div class="flex justify-between items-center mb-2">
+              <div class="text-[10px] sm:text-xs text-text-dim uppercase tracking-wider">
+                Voice: <span class="text-lcd-green">{selectedVoiceName()}</span>
               </div>
-              <audio class="w-full h-10" controls autoplay src={audioUrl()} />
+              <button
+                class="btn-win text-[10px]"
+                onClick={() => setShowAllVoices(!showAllVoices())}
+              >
+                {showAllVoices() ? 'LESS' : 'MORE'}
+              </button>
             </div>
-          </Show>
+
+            {/* Featured voices */}
+            <div class="flex flex-wrap gap-1">
+              <For each={featuredVoices()}>{v => (
+                <button
+                  class={`btn-win text-[10px] sm:text-xs relative ${voice() === v.id ? 'primary' : ''}`}
+                  onClick={() => setVoice(v.id)}
+                  onMouseEnter={() => previewVoice(v.id)}
+                  onMouseLeave={stopPreview}
+                >
+                  <Show when={previewingVoice() === v.id}>
+                    <span class="absolute -top-1 -right-1 w-2 h-2 bg-lcd-green rounded-full animate-pulse" />
+                  </Show>
+                  {v.name}
+                </button>
+              )}</For>
+            </div>
+
+            {/* All voices expandable */}
+            <Show when={showAllVoices()}>
+              <div class="mt-3 pt-3 border-t border-border-dark space-y-3">
+                <For each={Object.entries(ALL_VOICES)}>{([category, voices]) => (
+                  <div>
+                    <div class="text-[9px] sm:text-[10px] text-text-dim mb-1 uppercase">{category}</div>
+                    <div class="flex flex-wrap gap-1">
+                      <For each={voices}>{v => (
+                        <button
+                          class={`btn-win text-[10px] sm:text-xs relative ${voice() === v.id ? 'primary' : ''}`}
+                          onClick={() => setVoice(v.id)}
+                          onMouseEnter={() => previewVoice(v.id)}
+                          onMouseLeave={stopPreview}
+                        >
+                          <Show when={previewingVoice() === v.id}>
+                            <span class="absolute -top-1 -right-1 w-2 h-2 bg-lcd-green rounded-full animate-pulse" />
+                          </Show>
+                          {v.name}
+                        </button>
+                      )}</For>
+                    </div>
+                  </div>
+                )}</For>
+              </div>
+            </Show>
+          </div>
         </div>
+
+        {/* URL input */}
+        <Show when={mode() === 'url'}>
+          <div class="px-2 pb-2">
+            <div class="panel-inset">
+              <div class="flex">
+                <input
+                  type="text"
+                  class="flex-1 px-2 sm:px-3 py-2 sm:py-3 bg-transparent text-lcd-green font-mono text-xs sm:text-sm outline-none placeholder:text-text-dim"
+                  placeholder="Enter URL..."
+                  value={urlInput()}
+                  onInput={(e) => setUrlInput(e.currentTarget.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && extractUrl()}
+                />
+                <button
+                  class="btn-win primary px-3 sm:px-4"
+                  disabled={extracting() || !urlInput().trim()}
+                  onClick={extractUrl}
+                >
+                  <Show when={extracting()} fallback={
+                    <span class="i-mdi-download w-4 h-4" />
+                  }>
+                    <span class="animate-spin">*</span>
+                  </Show>
+                </button>
+              </div>
+            </div>
+          </div>
+        </Show>
+
+        {/* Text input */}
+        <Show when={mode() === 'text'}>
+          <div class="px-2 pb-2">
+            <div
+              class={`panel-inset ${dragover() ? 'border-accent' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragover(true) }}
+              onDragLeave={() => setDragover(false)}
+              onDrop={handleDrop}
+            >
+              <textarea
+                ref={textareaRef}
+                class="w-full min-h-24 sm:min-h-32 p-2 sm:p-3 bg-transparent text-lcd-green font-mono text-xs sm:text-sm resize-y outline-none placeholder:text-text-dim"
+                placeholder="Paste or type text here..."
+                value={text()}
+                onInput={(e) => setText(e.currentTarget.value)}
+              />
+              <div class="flex justify-between items-center px-2 sm:px-3 py-2 border-t border-border-dark bg-bg-mid">
+                <span class={`text-[10px] sm:text-xs font-mono ${charCount() > 1000 ? 'text-lcd-red' : charCount() > 800 ? 'text-lcd-yellow' : 'text-lcd-green'}`}>
+                  {charCount().toLocaleString()} chars
+                </span>
+                <button
+                  class="btn-win primary flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs"
+                  disabled={loading() || !text().trim()}
+                  onClick={generate}
+                >
+                  <Show when={loading()} fallback={
+                    <span class="i-mdi-waveform w-3 h-3 sm:w-4 sm:h-4" />
+                  }>
+                    <span class="animate-spin">*</span>
+                  </Show>
+                  {loading() ? 'GENERATING' : 'GENERATE'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Show>
+
+        {/* Free tier limit error */}
+        <Show when={showLimitError()}>
+          <div class="px-2 pb-2">
+            <div
+              style={{
+                background: 'linear-gradient(180deg, #1f1315 0%, #170a0c 100%)',
+                border: '1px solid',
+                'border-color': '#7f1d1d #450a0a #450a0a #7f1d1d',
+                padding: '12px',
+              }}
+            >
+              <div class="flex items-start gap-3">
+                <span class="i-mdi-alert-circle w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div class="flex-1">
+                  <div class="text-red-300 text-xs font-semibold mb-1">FREE TIER LIMIT REACHED</div>
+                  <p class="text-red-200/70 text-[10px] mb-3">
+                    You've used your daily free quota ({freeRemaining()} chars remaining).
+                    {user() ? ' Add balance to continue.' : ' Login or create an account to add balance.'}
+                  </p>
+                  <div class="flex gap-2">
+                    <Show when={!user()}>
+                      <button
+                        class="btn-win primary text-[10px]"
+                        onClick={() => { setShowLimitError(false); setShowAuth(true) }}
+                      >
+                        LOGIN / REGISTER
+                      </button>
+                    </Show>
+                    <Show when={user()}>
+                      <button class="btn-win primary text-[10px]">
+                        ADD BALANCE
+                      </button>
+                    </Show>
+                    <button
+                      class="btn-win text-[10px]"
+                      onClick={() => setShowLimitError(false)}
+                    >
+                      DISMISS
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Show>
 
         {/* History */}
-        <div class="w-full mt-12">
-          <h2 class="text-base font-medium text-white/50 mb-4">Recent</h2>
-          <Show when={history().length > 0} fallback={
-            <p class="text-center py-8 text-white/40 text-sm">No audio generated yet</p>
-          }>
-            <div class="flex flex-col gap-2">
-              <For each={history()}>{item => (
+        <Show when={history().length > 0}>
+          <div class="px-2 pb-2">
+            <div class="panel-inset p-2">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-[10px] sm:text-xs text-text-dim uppercase tracking-wider">Recent</span>
+                <div class="flex-1" />
                 <div
-                  class="bg-[#161b22] border border-white/10 p-3 flex justify-between items-center cursor-pointer hover:border-primary transition-all"
-                  onClick={() => playFromHistory(item)}
+                  style={{
+                    background: '#0d1117',
+                    border: '1px solid',
+                    'border-color': '#010409 #21262d #21262d #010409',
+                  }}
                 >
-                  <span class="text-sm truncate flex-1 mr-4">{item.text}</span>
-                  <div class="flex gap-3 text-xs text-white/40">
-                    <span>{Math.round(item.duration)}s</span>
-                    <span>{formatDate(item.date)}</span>
-                  </div>
+                  <input
+                    type="text"
+                    class="w-20 sm:w-28 px-2 py-1 bg-transparent text-lcd-pink font-mono text-[10px] outline-none placeholder:text-text-dim"
+                    placeholder="filter..."
+                    value={historyFilter()}
+                    onInput={(e) => setHistoryFilter(e.currentTarget.value)}
+                  />
                 </div>
-              )}</For>
-            </div>
-          </Show>
-        </div>
-
-        {/* Stats */}
-        <div class="w-full flex gap-6 mt-12 pt-6 border-t border-white/10">
-          <div class="text-center">
-            <div class="text-2xl font-semibold">{stats().generated.toLocaleString()}</div>
-            <div class="text-xs text-white/50 mt-1">Generated</div>
-          </div>
-          <div class="text-center">
-            <div class="text-2xl font-semibold">{stats().chars.toLocaleString()}</div>
-            <div class="text-xs text-white/50 mt-1">Characters</div>
-          </div>
-          <div class="text-center">
-            <div class="text-2xl font-semibold">{freeRemaining().toLocaleString()}</div>
-            <div class="text-xs text-white/50 mt-1">Free today</div>
-          </div>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer class="text-center text-sm text-white/40 py-6 border-t border-white/10">
-        <a href="https://rotko.net" class="hover:text-white">Rotko Networks</a>
-        {' · '}
-        <a href="/extension" class="hover:text-white">Extension</a>
-        {' · '}
-        <a href="/embed" class="hover:text-white">Embed</a>
-      </footer>
-
-      {/* Voice Selection Modal */}
-      <Show when={showVoices()}>
-        <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setShowVoices(false)}>
-          <div class="bg-[#161b22] border border-white/10 p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <div class="flex justify-between items-center mb-6">
-              <h2 class="text-xl font-semibold">Choose Voice</h2>
-              <button onClick={() => setShowVoices(false)} class="text-white/50 hover:text-white text-xl">&times;</button>
-            </div>
-
-            <div class="grid gap-2">
-              <For each={voices()}>{v => (
-                <div
-                  class={`flex items-center justify-between p-3 border transition-all cursor-pointer ${
-                    voice() === v.id
-                      ? 'bg-primary/10 border-primary'
-                      : 'bg-black/20 border-white/10 hover:border-white/20'
-                  }`}
-                  onClick={() => selectVoice(v.id)}
-                >
-                  <div class="flex items-center gap-3">
-                    <div class={`w-8 h-8 flex items-center justify-center text-xs font-medium ${
-                      v.gender === 'F' ? 'bg-primary/20 text-primary' : 'bg-white/10 text-white/70'
-                    }`}>
-                      {v.gender}
-                    </div>
-                    <div>
-                      <div class="font-medium">{v.name}</div>
-                      <div class="text-xs text-white/50">{v.accent} English</div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={(e) => { e.stopPropagation(); previewVoice(v.id) }}
-                    disabled={previewLoading() === v.id}
-                    class="p-2 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
-                    title="Preview voice"
+              </div>
+              <div class="max-h-28 sm:max-h-36 overflow-y-auto">
+              <For each={filteredHistory().slice(0, 10)}>{item => {
+                const isSelected = () => audioUrl() === item.url
+                return (
+                  <div
+                    class={`flex items-center gap-2 py-1 px-1 sm:px-2 text-[10px] sm:text-xs group ${
+                      isSelected() ? 'bg-accent/20 text-lcd-pink' : 'hover:bg-bg-light text-text'
+                    }`}
                   >
-                    <Show when={previewLoading() === v.id} fallback={
-                      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
-                    }>
-                      <div class="w-4 h-4 border-2 border-white/30 border-t-white animate-spin" />
-                    </Show>
-                  </button>
-                </div>
-              )}</For>
+                    <button
+                      class="flex-shrink-0 cursor-pointer bg-transparent border-none p-0"
+                      onClick={() => loadAndPlay(item.url, item.text, item.duration)}
+                      title="Play"
+                    >
+                      <span class={`w-3 h-3 block ${
+                        isSelected()
+                          ? (isPlaying() ? 'i-mdi-volume-high text-lcd-pink animate-pulse' : 'i-mdi-pause text-lcd-pink')
+                          : 'i-mdi-play text-lcd-green opacity-0 group-hover:opacity-100'
+                      }`} />
+                    </button>
+                    <span
+                      class="flex-1 truncate cursor-pointer"
+                      onClick={() => loadAndPlay(item.url, item.text, item.duration)}
+                    >{item.text}</span>
+                    <button
+                      class="flex-shrink-0 cursor-pointer bg-transparent border-none p-0 opacity-0 group-hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setText(item.text)
+                        setMode('text')
+                        textareaRef?.focus()
+                      }}
+                      title="Edit & Regenerate"
+                    >
+                      <span class="i-mdi-pencil w-3 h-3 text-lcd-yellow hover:text-lcd-green" />
+                    </button>
+                    <span class={`flex-shrink-0 ${isSelected() ? 'text-lcd-pink' : 'text-text-dim'}`}>{Math.round(item.duration)}s</span>
+                  </div>
+                )
+              }}</For>
+              </div>
             </div>
-
-            <p class="text-xs text-white/40 mt-4 text-center">
-              Click play to hear a sample of each voice
-            </p>
           </div>
+        </Show>
+
+        {/* Footer stats */}
+        <div class="flex justify-center gap-4 sm:gap-6 py-2 sm:py-3 border-t border-border-dark text-[10px] sm:text-xs text-text-dim">
+          <span>{stats().generated} generated</span>
+          <span>{stats().chars.toLocaleString()} chars</span>
         </div>
-      </Show>
+      </div>
+
+      {/* Credit */}
+      <div class="mt-3 sm:mt-4 text-[10px] sm:text-xs text-text-dim">
+        <a href="https://rotko.net" class="hover:text-lcd-green">ROTKO NETWORKS</a>
+        {' · '}
+        <a href="/embed.js" class="hover:text-lcd-green">EMBED</a>
+      </div>
 
       {/* Auth Modal */}
       <Show when={showAuth()}>
         <Suspense fallback={
           <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-            <div class="w-6 h-6 border-2 border-white/20 border-t-primary animate-spin" />
+            <div class="text-lcd-green animate-pulse">LOADING...</div>
           </div>
         }>
           <AuthModal onClose={() => setShowAuth(false)} onLogin={onLogin} />
         </Suspense>
       </Show>
 
-      {/* Toast notifications */}
       <ToastContainer />
     </div>
   )

@@ -58,6 +58,11 @@
       letter-spacing: 0.5px;
     }
     .stxt-btn:hover { border-color: #be185d; }
+    .stxt-btn a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .stxt-btn a:hover { color: #be185d; }
 
     .stxt-light {
       width: 8px;
@@ -112,6 +117,12 @@
       letter-spacing: 0.5px;
       font-size: 11px;
     }
+    .stxt-brand a {
+      color: inherit;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .stxt-brand a:hover { color: #be185d; }
     .stxt-header-btns {
       display: flex;
       gap: 4px;
@@ -302,7 +313,7 @@
     if (btnEl) return;
     btnEl = document.createElement('button');
     btnEl.className = 'stxt-btn';
-    btnEl.innerHTML = `<span class="stxt-light"></span><span>sonotxt</span>`;
+    btnEl.innerHTML = `<span class="stxt-light"></span><a href="https://sonotxt.com" target="_blank" rel="noopener" onclick="event.stopPropagation()">sonotxt</a>`;
     btnEl.onclick = openPlayer;
     document.body.appendChild(btnEl);
     updateUI();
@@ -338,7 +349,7 @@
       <div class="stxt-header">
         <div class="stxt-brand">
           <span class="stxt-light"></span>
-          <span>sonotxt</span>
+          <a href="https://sonotxt.com" target="_blank" rel="noopener">sonotxt</a>
         </div>
         <div class="stxt-header-btns">
           <button class="stxt-header-btn stxt-expand" title="Expand">${icons.expand}</button>

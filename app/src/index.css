@@ -1,68 +1,184 @@
+/* Dark blue theme with pink accents */
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --bg-dark: #0d1117;
+  --bg-mid: #161b22;
+  --bg-light: #21262d;
+  --border-dark: #010409;
+  --border-light: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --lcd-green: #00ff00;
+  --lcd-yellow: #ffcc00;
+  --lcd-pink: #ec4899;
+  --accent: #be185d;
+  --accent-light: #ec4899;
+  --accent-hover: #9f1239;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+* {
+  box-sizing: border-box;
 }
-a:hover {
-  color: #535bf2;
+
+html {
+  font-size: 13px;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
+  background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+  color: var(--text);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* Beveled panel effect - blue tinted */
+.panel {
+  background: linear-gradient(180deg, #21262d 0%, #161b22 100%);
+  border: 1px solid;
+  border-color: #30363d #0d1117 #0d1117 #30363d;
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,0.03),
+    inset -1px -1px 0 rgba(0,0,0,0.3),
+    0 8px 32px rgba(0,0,0,0.4);
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+.panel-inset {
+  background: #0d1117;
+  border: 1px solid;
+  border-color: #010409 #21262d #21262d #010409;
+  box-shadow: inset 1px 1px 3px rgba(0,0,0,0.5);
+}
+
+/* LCD display effect - blue tinted */
+.lcd {
+  background: linear-gradient(180deg, #0d1117 0%, #010409 100%);
+  border: 1px solid;
+  border-color: #010409 #21262d #21262d #010409;
+  box-shadow: inset 0 0 15px rgba(0,0,0,0.5);
+  color: var(--lcd-pink);
+  font-family: 'Courier New', monospace;
+  text-shadow: 0 0 8px rgba(236, 72, 153, 0.4);
+}
+
+/* Button - blue themed */
+.btn-win {
+  background: linear-gradient(180deg, #30363d 0%, #21262d 50%, #21262d 50%, #161b22 100%);
+  border: 1px solid;
+  border-color: #484f58 #0d1117 #0d1117 #484f58;
+  color: var(--text);
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: none;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+.btn-win:hover {
+  background: linear-gradient(180deg, #3d444d 0%, #30363d 50%, #30363d 50%, #21262d 100%);
+}
+
+.btn-win:active {
+  background: linear-gradient(180deg, #161b22 0%, #21262d 50%, #21262d 50%, #161b22 100%);
+  border-color: #0d1117 #484f58 #484f58 #0d1117;
+}
+
+.btn-win:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-win.primary {
+  background: linear-gradient(180deg, #ec4899 0%, #be185d 50%, #be185d 50%, #db2777 100%);
+  border-color: #f472b6 #831843 #831843 #f472b6;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.btn-win.primary:hover {
+  background: linear-gradient(180deg, #f472b6 0%, #db2777 50%, #db2777 50%, #ec4899 100%);
+}
+
+/* Title bar - blue themed */
+.titlebar {
+  background: linear-gradient(180deg, #21262d 0%, #161b22 100%);
+  border-bottom: 1px solid #0d1117;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Slider/progress bar - pink themed */
+.progress-track {
+  background: linear-gradient(180deg, #010409 0%, #0d1117 100%);
+  border: 2px solid;
+  border-color: #010409 #30363d #30363d #010409;
+  height: 16px;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.progress-fill {
+  background: linear-gradient(180deg, #f472b6 0%, #ec4899 30%, #be185d 70%, #9f1239 100%);
+  height: 100%;
+  box-shadow: 0 0 8px rgba(236, 72, 153, 0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+  transition: width 0.1s ease-out;
+}
+
+/* Visualizer bars effect - pink themed */
+@keyframes bar-pulse {
+  0%, 100% { height: 30%; }
+  50% { height: 100%; }
+}
+
+.viz-bar {
+  background: linear-gradient(180deg, #ec4899 0%, #be185d 50%, #9f1239 100%);
+  animation: bar-pulse 0.5s ease-in-out infinite;
+}
+
+/* Reset some defaults */
+button {
+  border-radius: 0;
+  font-family: inherit;
+}
+
+a {
+  color: var(--lcd-green);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Audio player override */
+audio {
+  height: 32px;
+  filter: grayscale(100%) brightness(0.8);
+}
+
+audio::-webkit-media-controls-panel {
+  background: #1a1a1a;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 12px;
+  background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+  border: 1px solid #4a4a4a;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #4a4a4a 0%, #3a3a3a 100%);
 }
