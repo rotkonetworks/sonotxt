@@ -2,11 +2,11 @@ import { createSignal, Show } from 'solid-js'
 import { getPublicKeyAsync, signAsync } from '@noble/ed25519'
 import { argon2id } from '@noble/hashes/argon2.js'
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js'
+import * as api from '../lib/api'
+import { ApiError } from '../lib/api'
 
 // Must match backend KEY_DERIVATION_SALT
 const KEY_DERIVATION_SALT = new TextEncoder().encode('sonotxt-key-derivation-v1')
-
-const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
 
 interface Props {
   onClose: () => void
@@ -122,10 +122,12 @@ export default function AuthModal(props: Props) {
     }
   }
 
-  async function deriveKeypairFromSeed(seed: Uint8Array) {
+  // Reserved for future use with hardware wallet seeds
+  async function _deriveKeypairFromSeed(seed: Uint8Array) {
     const publicKey = await getPublicKeyAsync(seed)
     return { privateKey: seed, publicKey }
   }
+  void _deriveKeypairFromSeed // suppress unused warning
 
   async function signChallengeLocally(nick: string, p: string, challenge: string) {
     const { privateKey } = await deriveKeypair(nick, p)
@@ -156,8 +158,14 @@ export default function AuthModal(props: Props) {
       } else {
         await handleLogin()
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError('An unexpected error occurred')
+      }
     }
 
     setLoading(false)
@@ -182,21 +190,12 @@ export default function AuthModal(props: Props) {
       setRecoveryShare(bytesToWords(userShare))
     }
 
-    const res = await fetch(`${API}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        nickname: nick,
-        public_key: publicKeyHex,
-        email: recEmail || undefined,
-        recovery_share: serverShareHex,
-      }),
+    await api.register({
+      nickname: nick,
+      public_key: publicKeyHex,
+      email: recEmail || undefined,
+      recovery_share: serverShareHex,
     })
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Registration failed')
-    }
 
     // If we have recovery share, show it to user before logging in
     if (recEmail && recoveryShare()) {
@@ -211,39 +210,13 @@ export default function AuthModal(props: Props) {
     const nick = nickname().trim()
     const p = pin()
 
-    const challengeRes = await fetch(`${API}/api/auth/challenge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nickname: nick }),
-    })
-
-    if (!challengeRes.ok) {
-      const data = await challengeRes.json().catch(() => ({}))
-      throw new Error(data.error || 'User not found')
-    }
-
-    const { challenge } = await challengeRes.json()
+    const { challenge } = await api.getChallenge(nick)
     const signature = await signChallengeLocally(nick, p, challenge)
 
-    const res = await fetch(`${API}/api/auth/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        nickname: nick,
-        challenge,
-        signature,
-      }),
-    })
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Invalid pin')
-    }
-
-    const data = await res.json()
+    const data = await api.verifyChallenge(nick, challenge, signature)
     props.onLogin(
       { id: data.user_id, nickname: data.nickname, email: data.email, balance: data.balance },
-      data.token
+      data.token!
     )
   }
 
@@ -251,19 +224,9 @@ export default function AuthModal(props: Props) {
     const e = email().trim()
     if (!e) throw new Error('Email required')
 
-    const res = await fetch(`${API}/api/auth/magic-link/request`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: e }),
-    })
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Failed to send magic link')
-    }
+    const data = await api.requestMagicLink(e)
 
     // Response should include server share for Shamir recovery
-    const data = await res.json()
     if (data.server_share) {
       setServerShareHex(data.server_share)
       setMessage('Check your email! Enter your recovery words below to complete recovery.')
@@ -293,39 +256,13 @@ export default function AuthModal(props: Props) {
     const seed = combineShares(serverShare, userShare)
 
     // Get challenge and sign with reconstructed seed
-    const challengeRes = await fetch(`${API}/api/auth/challenge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nickname: nick }),
-    })
-
-    if (!challengeRes.ok) {
-      const data = await challengeRes.json().catch(() => ({}))
-      throw new Error(data.error || 'User not found')
-    }
-
-    const { challenge } = await challengeRes.json()
+    const { challenge } = await api.getChallenge(nick)
     const signature = await signChallengeWithSeed(seed, challenge)
 
-    const res = await fetch(`${API}/api/auth/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        nickname: nick,
-        challenge,
-        signature,
-      }),
-    })
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      throw new Error(data.error || 'Recovery failed - invalid shares')
-    }
-
-    const data = await res.json()
+    const data = await api.verifyChallenge(nick, challenge, signature)
     props.onLogin(
       { id: data.user_id, nickname: data.nickname, email: data.email, balance: data.balance },
-      data.token
+      data.token!
     )
   }
 

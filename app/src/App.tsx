@@ -1,64 +1,64 @@
-import { createSignal, For, Show, onMount, lazy, Suspense, onCleanup, createMemo } from 'solid-js'
+import { createSignal, For, Show, onMount, lazy, Suspense, onCleanup, createMemo, createResource } from 'solid-js'
 import { ToastContainer, showToast } from './components/Toast'
+import { watchJobStatus } from './lib/jobStatus'
+import { useStore } from './lib/store'
+import * as api from './lib/api'
+import type { User } from './lib/api'
+import ProfileDropdown from './components/ProfileDropdown'
 
-const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
+// Fetch voices with createResource - auto-cached, suspense-ready
+const fetchVoicesData = async () => {
+  try {
+    const data = await api.fetchVoices()
+    return data
+  } catch {
+    return { voices: {}, samples_base_url: '' }
+  }
+}
 
 const AuthModal = lazy(() => import('./components/AuthModal'))
-
-interface HistoryItem {
-  text: string
-  url: string
-  duration: number
-  date: string
-  sourceUrl?: string
-}
-
-interface User {
-  id: string
-  nickname?: string
-  email?: string
-  balance: number
-}
+const ProfilePage = lazy(() => import('./components/ProfilePage'))
 
 interface Voice {
   id: string
   name: string
   accent: string
   gender: string
-  sample_url?: string
+  price: number // tokens per 1000 chars
 }
 
-// All available voices organized by category
-const ALL_VOICES: Record<string, Voice[]> = {
-  'American Female': [
-    { id: 'af_bella', name: 'Bella', accent: 'US', gender: 'F' },
-    { id: 'af_nicole', name: 'Nicole', accent: 'US', gender: 'F' },
-    { id: 'af_sarah', name: 'Sarah', accent: 'US', gender: 'F' },
-    { id: 'af_sky', name: 'Sky', accent: 'US', gender: 'F' },
-    { id: 'af_nova', name: 'Nova', accent: 'US', gender: 'F' },
-    { id: 'af_river', name: 'River', accent: 'US', gender: 'F' },
-  ],
-  'American Male': [
-    { id: 'am_adam', name: 'Adam', accent: 'US', gender: 'M' },
-    { id: 'am_michael', name: 'Michael', accent: 'US', gender: 'M' },
-    { id: 'am_eric', name: 'Eric', accent: 'US', gender: 'M' },
-    { id: 'am_liam', name: 'Liam', accent: 'US', gender: 'M' },
-  ],
-  'British Female': [
-    { id: 'bf_emma', name: 'Emma', accent: 'UK', gender: 'F' },
-    { id: 'bf_alice', name: 'Alice', accent: 'UK', gender: 'F' },
-    { id: 'bf_lily', name: 'Lily', accent: 'UK', gender: 'F' },
-  ],
-  'British Male': [
-    { id: 'bm_george', name: 'George', accent: 'UK', gender: 'M' },
-    { id: 'bm_daniel', name: 'Daniel', accent: 'UK', gender: 'M' },
-    { id: 'bm_lewis', name: 'Lewis', accent: 'UK', gender: 'M' },
-  ],
-}
-
-const FEATURED_VOICES = ['af_river', 'af_sarah', 'am_liam', 'am_eric', 'bf_lily', 'bm_lewis']
+// All voices in a flat list for jukebox navigation
+const VOICES: Voice[] = [
+  // American Female - standard price
+  { id: 'af_bella', name: 'Bella', accent: 'US', gender: 'F', price: 1 },
+  { id: 'af_nicole', name: 'Nicole', accent: 'US', gender: 'F', price: 1 },
+  { id: 'af_sarah', name: 'Sarah', accent: 'US', gender: 'F', price: 1 },
+  { id: 'af_sky', name: 'Sky', accent: 'US', gender: 'F', price: 1 },
+  { id: 'af_nova', name: 'Nova', accent: 'US', gender: 'F', price: 2 },
+  { id: 'af_river', name: 'River', accent: 'US', gender: 'F', price: 1 },
+  // American Male
+  { id: 'am_adam', name: 'Adam', accent: 'US', gender: 'M', price: 1 },
+  { id: 'am_michael', name: 'Michael', accent: 'US', gender: 'M', price: 1 },
+  { id: 'am_eric', name: 'Eric', accent: 'US', gender: 'M', price: 1 },
+  { id: 'am_liam', name: 'Liam', accent: 'US', gender: 'M', price: 2 },
+  // British Female
+  { id: 'bf_emma', name: 'Emma', accent: 'UK', gender: 'F', price: 2 },
+  { id: 'bf_alice', name: 'Alice', accent: 'UK', gender: 'F', price: 2 },
+  { id: 'bf_lily', name: 'Lily', accent: 'UK', gender: 'F', price: 2 },
+  // British Male
+  { id: 'bm_george', name: 'George', accent: 'UK', gender: 'M', price: 2 },
+  { id: 'bm_daniel', name: 'Daniel', accent: 'UK', gender: 'M', price: 2 },
+  { id: 'bm_lewis', name: 'Lewis', accent: 'UK', gender: 'M', price: 2 },
+]
 
 export default function App() {
+  // Use global store for user/history/stats
+  const { state: store, actions } = useStore()
+
+  // Voices resource - auto-fetched, cached
+  const [voicesData] = createResource(fetchVoicesData)
+
+  // Local UI state
   const [mode, setMode] = createSignal<'text' | 'url'>('text')
   const [text, setText] = createSignal('')
   const [urlInput, setUrlInput] = createSignal('')
@@ -68,83 +68,78 @@ export default function App() {
   const [extracting, setExtracting] = createSignal(false)
   const [status, setStatus] = createSignal('')
   const [audioUrl, setAudioUrl] = createSignal('')
+  const [currentJobId, setCurrentJobId] = createSignal('')
   const [audioTitle, setAudioTitle] = createSignal('')
   const [audioDuration, setAudioDuration] = createSignal(0)
   const [currentTime, setCurrentTime] = createSignal(0)
   const [isPlaying, setIsPlaying] = createSignal(false)
-  const [history, setHistory] = createSignal<HistoryItem[]>([])
-  const [stats, setStats] = createSignal({ generated: 0, chars: 0 })
-  const [freeRemaining, setFreeRemaining] = createSignal(1000)
-  const [showAuth, setShowAuth] = createSignal(false)
-  const [user, setUser] = createSignal<User | null>(null)
   const [dragover, setDragover] = createSignal(false)
-  const [showAllVoices, setShowAllVoices] = createSignal(false)
-  const [previewingVoice, setPreviewingVoice] = createSignal<string | null>(null)
-  const [samplesBaseUrl, setSamplesBaseUrl] = createSignal('')
   const [showLimitError, setShowLimitError] = createSignal(false)
   const [historyFilter, setHistoryFilter] = createSignal('')
   const [isDragging, setIsDragging] = createSignal(false)
+  const [seekPreviewPct, setSeekPreviewPct] = createSignal<number | null>(null) // null = not seeking
+  const [hoverPct, setHoverPct] = createSignal<number | null>(null) // for tooltip on hover
+  const [showAuth, setShowAuth] = createSignal(false)
+  const [showProfile, setShowProfile] = createSignal(false)
 
   let textareaRef: HTMLTextAreaElement | undefined
   let audioRef: HTMLAudioElement | undefined
   let previewAudioRef: HTMLAudioElement | undefined
 
-  const featuredVoices = createMemo(() => {
-    const all = Object.values(ALL_VOICES).flat()
-    return all.filter(v => FEATURED_VOICES.includes(v.id))
-  })
+  // Derived: samples base URL from resource
+  const samplesBaseUrl = () => voicesData()?.samples_base_url || ''
 
-  const selectedVoiceName = createMemo(() => {
-    const all = Object.values(ALL_VOICES).flat()
-    const found = all.find(v => v.id === voice())
-    return found?.name || voice()
-  })
+  // Derived: current voice index and data
+  const voiceIndex = createMemo(() => VOICES.findIndex(v => v.id === voice()))
+  const currentVoice = createMemo(() => VOICES[voiceIndex()] || VOICES[0])
 
+  // Derived: filtered history from store
   const filteredHistory = createMemo(() => {
     const filter = historyFilter().toLowerCase().trim()
-    if (!filter) return history()
-    return history().filter(item => item.text.toLowerCase().includes(filter))
+    if (!filter) return store.history
+    return store.history.filter(item => item.text.toLowerCase().includes(filter))
   })
 
-  async function fetchVoices() {
-    try {
-      const res = await fetch(`${API}/api/voices`)
-      const data = await res.json()
-      if (data.samples_base_url) {
-        setSamplesBaseUrl(data.samples_base_url)
-      }
-    } catch {}
-  }
-
-  function previewVoice(voiceId: string) {
+  // Play sample for voice
+  function playSample(voiceId: string) {
     if (!samplesBaseUrl() || !previewAudioRef) return
     const url = `${samplesBaseUrl()}/${voiceId}.mp3`
     previewAudioRef.src = url
     previewAudioRef.play().catch(() => {})
-    setPreviewingVoice(voiceId)
   }
 
-  function stopPreview() {
-    if (previewAudioRef) {
-      previewAudioRef.pause()
-      previewAudioRef.currentTime = 0
-    }
-    setPreviewingVoice(null)
+  // Jukebox navigation
+  function prevVoice() {
+    const idx = voiceIndex()
+    const newIdx = idx <= 0 ? VOICES.length - 1 : idx - 1
+    const newVoice = VOICES[newIdx]
+    setVoice(newVoice.id)
+    playSample(newVoice.id)
+  }
+
+  function nextVoice() {
+    const idx = voiceIndex()
+    const newIdx = idx >= VOICES.length - 1 ? 0 : idx + 1
+    const newVoice = VOICES[newIdx]
+    setVoice(newVoice.id)
+    playSample(newVoice.id)
+  }
+
+  function selectVoice(voiceId: string) {
+    setVoice(voiceId)
+    playSample(voiceId)
   }
 
   onMount(() => {
-    const h = localStorage.getItem('sonotxt_history')
-    if (h) setHistory(JSON.parse(h))
-
-    const s = localStorage.getItem('sonotxt_stats')
-    if (s) setStats(JSON.parse(s))
-
-    const token = localStorage.getItem('sonotxt_token')
-    if (token) checkSession(token)
-
-    fetchVoices()
+    // Check for existing session token
+    const savedToken = localStorage.getItem('sonotxt_token')
+    if (savedToken) checkSession(savedToken)
 
     const handleKeydown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+
+      // Ctrl+Enter to generate
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault()
         if (mode() === 'url' && urlInput().trim() && !extracting()) {
@@ -153,9 +148,43 @@ export default function App() {
           generate()
         }
       }
+
+      // Escape to close modals
       if (e.key === 'Escape') {
         if (showAuth()) setShowAuth(false)
-        if (showAllVoices()) setShowAllVoices(false)
+      }
+
+      // Voice selection with number keys (when not typing)
+      if (!isInput) {
+        const num = parseInt(e.key)
+        if (!isNaN(num)) {
+          e.preventDefault()
+          // 1-9 = voices 0-8, 0 = voice 9
+          const idx = num === 0 ? 9 : num - 1
+          if (idx < VOICES.length) {
+            selectVoice(VOICES[idx].id)
+          }
+        }
+      }
+
+      // Player controls (only when not typing)
+      if (!isInput && audioUrl()) {
+        if (e.key === ' ') {
+          e.preventDefault()
+          togglePlay()
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          seekByPercent(-10)
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          seekByPercent(10)
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          if (audioRef) audioRef.volume = Math.min(1, audioRef.volume + 0.1)
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          if (audioRef) audioRef.volume = Math.max(0, audioRef.volume - 0.1)
+        }
       }
     }
     document.addEventListener('keydown', handleKeydown)
@@ -164,20 +193,16 @@ export default function App() {
     textareaRef?.focus()
   })
 
-  async function checkSession(token: string) {
+  async function checkSession(tok: string) {
     try {
-      const res = await fetch(`${API}/api/auth/session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setUser({ id: data.user_id, nickname: data.nickname, email: data.email, balance: data.balance })
-      } else {
-        localStorage.removeItem('sonotxt_token')
-      }
-    } catch {}
+      const data = await api.checkSession(tok)
+      actions.login(
+        { id: data.user_id, nickname: data.nickname, email: data.email, balance: data.balance },
+        tok
+      )
+    } catch {
+      actions.logout()
+    }
   }
 
   const charCount = () => text().length
@@ -192,39 +217,34 @@ export default function App() {
     setStatus('FETCHING...')
 
     try {
-      const res = await fetch(`${API}/api/extract`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: fullUrl }),
-      })
-
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}))
-        throw new Error(e.error || 'Failed to extract')
-      }
-
-      const data = await res.json()
+      const data = await api.extractUrl(fullUrl)
       setText(data.text)
       setExtractedTitle(data.title || '')
       setMode('text')
       setStatus('')
       showToast(`Extracted ${data.char_count} chars`, 'success')
-    } catch (e: any) {
-      showToast(e.message, 'error')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to extract'
+      showToast(message, 'error')
       setStatus('ERROR')
     }
 
     setExtracting(false)
   }
 
+  let cancelJobWatch: (() => void) | null = null
+
   async function generate() {
     const t = text().trim()
     if (!t) return
 
-    if (!user() && t.length > 1000) {
+    if (!store.user && t.length > 1000) {
       showToast('Free tier limited to 1000 chars', 'error')
       return
     }
+
+    // Cancel any existing job watch
+    cancelJobWatch?.()
 
     setLoading(true)
     setStatus('CONNECTING...')
@@ -232,78 +252,60 @@ export default function App() {
     setShowLimitError(false)
 
     try {
-      const res = await fetch(`${API}/api/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: t, voice: voice() }),
-      })
+      const result = await api.submitTts({ text: t, voice: voice() })
+      const { job_id, free_tier_remaining } = result
+      if (free_tier_remaining !== undefined) actions.setFreeRemaining(free_tier_remaining)
 
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}))
-        // Check if it's a free tier limit error
-        if (e.error?.includes('Free tier limit') || e.error?.includes('limit exceeded')) {
-          setShowLimitError(true)
-          setStatus('LIMIT')
-          setLoading(false)
-          return
-        }
-        throw new Error(e.error || 'Request failed')
+      // Use WebSocket with API fallback
+      await new Promise<void>((resolve, reject) => {
+        cancelJobWatch = watchJobStatus(
+          job_id,
+          (result) => {
+            if (result.status === 'Complete' && result.url) {
+              setAudioUrl(result.url)
+              setCurrentJobId(job_id)
+              setAudioTitle(t.slice(0, 60) + (t.length > 60 ? '...' : ''))
+              setAudioDuration(result.duration_seconds || 0)
+              setStatus('READY')
+              setTimeout(() => audioRef?.play(), 100)
+
+              // Update store (persists automatically, increments stats)
+              actions.addToHistory({
+                text: t.slice(0, 100),
+                url: result.url,
+                jobId: job_id,
+                duration: result.duration_seconds || 0,
+                voice: voice(),
+                sourceUrl: urlInput() || undefined
+              })
+              setLoading(false)
+              resolve()
+            } else if (result.status === 'Failed') {
+              setLoading(false)
+              reject(new Error(result.reason || 'Generation failed'))
+            } else if (result.status === 'Processing' && result.progress) {
+              setStatus(`PROCESSING ${result.progress}%`)
+            } else {
+              setStatus(result.status?.toUpperCase() || 'WORKING...')
+            }
+          },
+          (error) => {
+            setLoading(false)
+            reject(error)
+          }
+        )
+      })
+    } catch (err) {
+      if (err instanceof api.ApiError && err.isLimitExceeded) {
+        setShowLimitError(true)
+        setStatus('LIMIT')
+      } else {
+        const message = err instanceof Error ? err.message : 'Request failed'
+        showToast(message, 'error')
+        setStatus('ERROR')
       }
-
-      const { job_id, free_tier_remaining } = await res.json()
-      if (free_tier_remaining !== undefined) setFreeRemaining(free_tier_remaining)
-
-      const result = await pollJob(job_id)
-      setAudioUrl(result.url)
-      setAudioTitle(t.slice(0, 60) + (t.length > 60 ? '...' : ''))
-      setAudioDuration(result.duration_seconds)
-      setStatus('READY')
-      // Autoplay
-      setTimeout(() => audioRef?.play(), 100)
-
-      addToHistory(t, result.url, result.duration_seconds)
-      setStats(s => {
-        const updated = { generated: s.generated + 1, chars: s.chars + t.length }
-        localStorage.setItem('sonotxt_stats', JSON.stringify(updated))
-        return updated
-      })
-    } catch (e: any) {
-      showToast(e.message, 'error')
-      setStatus('ERROR')
+      setLoading(false)
     }
-
-    setLoading(false)
-  }
-
-  async function pollJob(jobId: string) {
-    for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 1000))
-      const res = await fetch(`${API}/api/status?job_id=${jobId}`)
-      const data = await res.json()
-
-      if (data.status === 'Complete') return data
-      if (data.status === 'Failed') throw new Error(data.reason || 'Generation failed')
-
-      setStatus(data.status.toUpperCase() + '...')
-    }
-    throw new Error('Timeout')
-  }
-
-  function addToHistory(t: string, url: string, duration: number) {
-    setHistory(h => {
-      const updated = [
-        {
-          text: t.slice(0, 100),
-          url,
-          duration,
-          date: new Date().toISOString(),
-          sourceUrl: urlInput() || undefined
-        },
-        ...h.slice(0, 9),
-      ]
-      localStorage.setItem('sonotxt_history', JSON.stringify(updated))
-      return updated
-    })
   }
 
   function handleDrop(e: DragEvent) {
@@ -316,16 +318,14 @@ export default function App() {
     }
   }
 
-  function onLogin(u: User, token: string) {
-    setUser(u)
-    localStorage.setItem('sonotxt_token', token)
+  function onLogin(u: User, tok: string) {
+    actions.login(u, tok)
     setShowAuth(false)
     showToast(`Welcome, ${u.nickname || u.email}!`, 'success')
   }
 
   function logout() {
-    setUser(null)
-    localStorage.removeItem('sonotxt_token')
+    actions.logout()
     showToast('Logged out', 'success')
   }
 
@@ -341,62 +341,130 @@ export default function App() {
     else audioRef.pause()
   }
 
-  function stop() {
-    if (!audioRef) return
-    audioRef.pause()
-    audioRef.currentTime = 0
-    setIsPlaying(false)
+  // Seek by percentage (for buttons and keyboard)
+  function seekByPercent(deltaPct: number) {
+    if (!audioRef || !audioDuration()) return
+    const deltaTime = (deltaPct / 100) * audioDuration()
+    audioRef.currentTime = Math.max(0, Math.min(audioDuration(), audioRef.currentTime + deltaTime))
+    setCurrentTime(audioRef.currentTime)
+  }
+
+  // Smooth progress updates using requestAnimationFrame
+  let rafId: number | null = null
+
+  function startProgressAnimation() {
+    function update() {
+      if (audioRef && !audioRef.paused) {
+        setCurrentTime(audioRef.currentTime)
+        rafId = requestAnimationFrame(update)
+      }
+    }
+    rafId = requestAnimationFrame(update)
+  }
+
+  function stopProgressAnimation() {
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
   }
 
   let progressTrackRef: HTMLDivElement | undefined
 
-  function seekFromEvent(e: MouseEvent) {
-    if (!audioRef || !progressTrackRef) return
+  // Get percentage from mouse/touch event
+  function getPctFromEvent(e: MouseEvent | TouchEvent): number {
+    if (!progressTrackRef) return 0
     const rect = progressTrackRef.getBoundingClientRect()
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    audioRef.currentTime = pct * audioDuration()
+    const clientX = 'touches' in e ? e.touches[0]?.clientX ?? e.changedTouches[0]?.clientX : e.clientX
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * 100
+  }
+
+  // Actually seek the audio (only called on release)
+  function seekToPercent(pct: number) {
+    if (!audioRef) return
+    const newTime = (pct / 100) * audioDuration()
+    audioRef.currentTime = newTime
+    setCurrentTime(newTime)
   }
 
   function handleProgressMouseDown(e: MouseEvent) {
     if (!audioUrl()) return
+    e.preventDefault()
+    const pct = getPctFromEvent(e)
     setIsDragging(true)
-    seekFromEvent(e)
+    setSeekPreviewPct(pct)
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging()) seekFromEvent(e)
+      if (!isDragging()) return
+      const pct = getPctFromEvent(e)
+      setSeekPreviewPct(pct)
     }
-    const handleMouseUp = () => {
+
+    const handleMouseUp = (e: MouseEvent) => {
+      const finalPct = getPctFromEvent(e)
+      seekToPercent(finalPct)
       setIsDragging(false)
+      setSeekPreviewPct(null)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
+
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
   }
 
+  function handleProgressTouchStart(e: TouchEvent) {
+    if (!audioUrl()) return
+    e.preventDefault()
+    const pct = getPctFromEvent(e)
+    setIsDragging(true)
+    setSeekPreviewPct(pct)
+  }
+
+  function handleProgressTouchMove(e: TouchEvent) {
+    if (!isDragging()) return
+    e.preventDefault()
+    const pct = getPctFromEvent(e)
+    setSeekPreviewPct(pct)
+  }
+
+  function handleProgressTouchEnd(e: TouchEvent) {
+    if (!isDragging()) return
+    e.preventDefault()
+    const pct = seekPreviewPct() ?? 0
+    seekToPercent(pct)
+    setIsDragging(false)
+    setSeekPreviewPct(null)
+  }
+
+  function handleProgressHover(e: MouseEvent) {
+    if (isDragging()) return
+    const pct = getPctFromEvent(e)
+    setHoverPct(pct)
+  }
+
+  function handleProgressLeave() {
+    if (!isDragging()) setHoverPct(null)
+  }
+
   const progressPct = () => audioDuration() ? (currentTime() / audioDuration()) * 100 : 0
 
-  function loadAndPlay(url: string, title: string, duration: number) {
+  function loadAndPlay(url: string, title: string, duration: number, jobId?: string) {
     setAudioUrl(url)
+    setCurrentJobId(jobId || '')
     setAudioTitle(title)
     setAudioDuration(duration)
     setTimeout(() => audioRef?.play(), 100)
   }
 
-  async function downloadAudio() {
-    const url = audioUrl()
-    if (!url) return
-    try {
-      const res = await fetch(url)
-      const blob = await res.blob()
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `sonotxt-${Date.now()}.mp3`
-      a.click()
-      URL.revokeObjectURL(a.href)
-    } catch {
-      showToast('Download failed', 'error')
-    }
+  function downloadAudio() {
+    const jobId = currentJobId()
+    if (!jobId) return
+    // use api proxy which sets Content-Disposition: attachment
+    const a = document.createElement('a')
+    a.href = api.getDownloadUrl(jobId)
+    a.download = `sonotxt-${jobId}.mp3`
+    a.click()
   }
 
   async function shareAudio() {
@@ -417,13 +485,12 @@ export default function App() {
       {/* Hidden preview audio */}
       <audio
         ref={previewAudioRef}
-        onEnded={() => setPreviewingVoice(null)}
         class="hidden"
       />
 
       {/* Main panel - responsive width */}
       <div class="panel w-full max-w-[95vw] sm:max-w-xl">
-        {/* Title bar - draggable */}
+        {/* Title bar */}
         <div class="titlebar cursor-move select-none">
           {/* Left: Window controls */}
           <div class="flex gap-0.5">
@@ -432,31 +499,27 @@ export default function App() {
             <button class="w-3 h-3 bg-lcd-green/80 hover:bg-lcd-green" title="Maximize" />
           </div>
 
-          {/* Center: Logo + drag area */}
+          {/* Center: Logo */}
           <div class="flex-1 flex items-center justify-center gap-2">
             <div class="i-mdi-waveform text-accent w-4 h-4" />
-            <span class="text-text-bright">SONOTXT</span>
-            <Show when={user()}>
-              <span class="text-text-dim hidden sm:inline">-</span>
-              <span class="text-lcd-green text-xs truncate max-w-24 hidden sm:inline">
-                {user()!.nickname || user()!.email?.split('@')[0]}
-              </span>
-            </Show>
+            <span class="text-text-bright font-medium">SONOTXT</span>
           </div>
 
-          {/* Right: Balance + Login/Logout */}
+          {/* Right: Free tier counter or Profile dropdown */}
           <div class="flex items-center gap-2">
-            <span class="text-lcd-yellow text-xs">
-              {user() ? `$${user()!.balance.toFixed(2)}` : `${freeRemaining()}`}
-            </span>
-            <Show when={user()} fallback={
-              <button onClick={() => setShowAuth(true)} class="btn-win text-xs px-2" title="Login">
-                <span class="i-mdi-login w-3 h-3" />
-              </button>
+            <Show when={store.user} fallback={
+              <>
+                <span class="text-[10px] text-text-dim hidden sm:inline">FREE</span>
+                <span class="text-xs text-lcd-green font-mono">{store.freeRemaining}</span>
+                <button onClick={() => setShowAuth(true)} class="btn-win text-xs px-2 py-1" title="Login">
+                  <span class="i-mdi-account-plus w-3 h-3" />
+                </button>
+              </>
             }>
-              <button onClick={logout} class="btn-win text-xs px-2" title="Logout">
-                <span class="i-mdi-logout w-3 h-3" />
-              </button>
+              <ProfileDropdown
+                onLogout={logout}
+                onShowProfile={() => setShowProfile(true)}
+              />
             </Show>
           </div>
         </div>
@@ -489,84 +552,131 @@ export default function App() {
             </div>
           </Show>
 
-          {/* Progress bar - always visible, draggable */}
-          <div class="flex items-center gap-2 sm:gap-3 mb-2">
-            <span class="text-[10px] sm:text-xs w-8 sm:w-10 text-lcd-pink font-mono">{formatTime(currentTime())}</span>
-            <div
-              ref={progressTrackRef}
-              class={`flex-1 h-5 relative select-none ${audioUrl() ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
-              style={{
-                background: 'linear-gradient(180deg, #010409 0%, #0d1117 100%)',
-                border: '2px solid',
-                'border-color': '#010409 #30363d #30363d #010409',
-                'box-shadow': 'inset 0 2px 4px rgba(0,0,0,0.5)',
-              }}
-              onMouseDown={handleProgressMouseDown}
+          {/* Modern Player - SoundCloud style */}
+          <div class="flex items-center gap-3 mb-3">
+            {/* Play/Pause button */}
+            <button
+              class={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
+                audioUrl()
+                  ? 'bg-accent hover:bg-accent/80 text-white cursor-pointer'
+                  : 'bg-bg-light text-text-dim cursor-not-allowed'
+              }`}
+              onClick={togglePlay}
+              disabled={!audioUrl()}
             >
-              {/* Fill */}
-              <div
-                style={{
-                  width: `${progressPct()}%`,
-                  height: '100%',
-                  background: 'linear-gradient(180deg, #f472b6 0%, #ec4899 30%, #be185d 70%, #9f1239 100%)',
-                  'box-shadow': '0 0 8px rgba(236, 72, 153, 0.6), inset 0 1px 0 rgba(255,255,255,0.2)',
-                  transition: isDragging() ? 'none' : 'width 0.1s ease-out',
-                }}
-              />
-              {/* Draggable thumb */}
-              <Show when={audioUrl()}>
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: `calc(${progressPct()}% - 6px)`,
-                    transform: 'translateY(-50%)',
-                    width: '12px',
-                    height: '18px',
-                    background: 'linear-gradient(180deg, #f472b6 0%, #be185d 100%)',
-                    border: '1px solid',
-                    'border-color': '#f9a8d4 #9f1239 #9f1239 #f9a8d4',
-                    'box-shadow': '0 2px 4px rgba(0,0,0,0.3)',
-                    cursor: 'grab',
-                  }}
-                />
-              </Show>
-            </div>
-            <span class="text-[10px] sm:text-xs w-8 sm:w-10 text-right text-lcd-pink font-mono">{formatTime(audioDuration())}</span>
-          </div>
+              <span class={`${isPlaying() ? 'i-mdi-pause' : 'i-mdi-play'} w-5 h-5 sm:w-6 sm:h-6`} />
+            </button>
 
-          {/* Transport controls - always visible */}
-          <div class="flex justify-center gap-1 mb-2">
-            <button class="btn-win p-1 sm:p-2" onClick={() => audioRef && (audioRef.currentTime -= 10)} title="Back 10s" disabled={!audioUrl()}>
-              <span class="i-mdi-rewind-10 w-3 h-3 sm:w-4 sm:h-4" />
-            </button>
-            <button class="btn-win p-1 sm:p-2" onClick={stop} title="Stop" disabled={!audioUrl()}>
-              <span class="i-mdi-stop w-3 h-3 sm:w-4 sm:h-4" />
-            </button>
-            <button class="btn-win primary p-1 sm:p-2" onClick={togglePlay} title={isPlaying() ? 'Pause' : 'Play'} disabled={!audioUrl()}>
-              <span class={isPlaying() ? 'i-mdi-pause w-4 h-4 sm:w-5 sm:h-5' : 'i-mdi-play w-4 h-4 sm:w-5 sm:h-5'} />
-            </button>
-            <button class="btn-win p-1 sm:p-2" onClick={() => audioRef && (audioRef.currentTime += 10)} title="Fwd 10s" disabled={!audioUrl()}>
-              <span class="i-mdi-fast-forward-10 w-3 h-3 sm:w-4 sm:h-4" />
-            </button>
-            <div class="w-px h-4 bg-border-light mx-1" />
-            <button class="btn-win p-1 sm:p-2" onClick={downloadAudio} title="Download" disabled={!audioUrl()}>
-              <span class="i-mdi-download w-3 h-3 sm:w-4 sm:h-4" />
-            </button>
-            <button class="btn-win p-1 sm:p-2" onClick={shareAudio} title="Share" disabled={!audioUrl()}>
-              <span class="i-mdi-share-variant w-3 h-3 sm:w-4 sm:h-4" />
-            </button>
+            {/* Waveform/Progress area */}
+            <div class="flex-1 flex flex-col gap-1">
+              {/* Progress bar */}
+              <div
+                ref={progressTrackRef}
+                class={`h-8 sm:h-10 relative select-none rounded ${audioUrl() ? 'cursor-pointer' : 'opacity-40'}`}
+                style={{ background: '#1a1f26' }}
+                onMouseDown={handleProgressMouseDown}
+                onMouseMove={handleProgressHover}
+                onMouseLeave={handleProgressLeave}
+                onTouchStart={handleProgressTouchStart}
+                onTouchMove={handleProgressTouchMove}
+                onTouchEnd={handleProgressTouchEnd}
+              >
+                {/* Waveform placeholder - grey bars */}
+                <div class="absolute inset-0 flex items-end justify-around px-1 opacity-30">
+                  <For each={Array(40).fill(0)}>{(_, i) => (
+                    <div
+                      class="w-1 bg-text-dim rounded-t"
+                      style={{ height: `${30 + Math.sin(i() * 0.5) * 25 + Math.random() * 20}%` }}
+                    />
+                  )}</For>
+                </div>
+
+                {/* Played portion overlay */}
+                <div
+                  class="absolute inset-y-0 left-0 overflow-hidden rounded-l"
+                  style={{ width: `${seekPreviewPct() ?? progressPct()}%` }}
+                >
+                  <div class="absolute inset-0 flex items-end justify-around px-1" style={{ width: `${100 / ((seekPreviewPct() ?? progressPct()) / 100 || 1)}%` }}>
+                    <For each={Array(40).fill(0)}>{(_, i) => (
+                      <div
+                        class="w-1 bg-accent rounded-t"
+                        style={{ height: `${30 + Math.sin(i() * 0.5) * 25 + Math.random() * 20}%` }}
+                      />
+                    )}</For>
+                  </div>
+                </div>
+
+                {/* Hover indicator line */}
+                <Show when={hoverPct() !== null && !isDragging()}>
+                  <div
+                    class="absolute inset-y-0 w-0.5 bg-white/50"
+                    style={{ left: `${hoverPct()}%` }}
+                  />
+                </Show>
+
+                {/* Playhead line */}
+                <Show when={audioUrl()}>
+                  <div
+                    class="absolute inset-y-0 w-0.5 bg-white"
+                    style={{
+                      left: `${seekPreviewPct() ?? progressPct()}%`,
+                      'box-shadow': '0 0 4px rgba(255,255,255,0.5)',
+                    }}
+                  />
+                </Show>
+
+                {/* Time tooltip */}
+                <Show when={(hoverPct() !== null || isDragging()) && audioDuration() > 0}>
+                  <div
+                    class="absolute -top-7 px-2 py-0.5 bg-bg-dark border border-border-light rounded text-xs text-text-bright font-mono"
+                    style={{
+                      left: `${seekPreviewPct() ?? hoverPct() ?? 0}%`,
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    {formatTime(((seekPreviewPct() ?? hoverPct() ?? 0) / 100) * audioDuration())}
+                  </div>
+                </Show>
+              </div>
+
+              {/* Time display */}
+              <div class="flex justify-between text-[10px] sm:text-xs text-text-dim font-mono">
+                <span>{formatTime(currentTime())}</span>
+                <span>{formatTime(audioDuration())}</span>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div class="flex gap-1">
+              <button
+                class="p-2 text-text-dim hover:text-text-bright transition-colors disabled:opacity-30"
+                onClick={downloadAudio}
+                disabled={!currentJobId()}
+                title="Download"
+              >
+                <span class="i-mdi-download w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+              <button
+                class="p-2 text-text-dim hover:text-text-bright transition-colors disabled:opacity-30"
+                onClick={shareAudio}
+                disabled={!audioUrl()}
+                title="Share"
+              >
+                <span class="i-mdi-share-variant w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Hidden audio element */}
           <audio
             ref={audioRef}
             src={audioUrl()}
-            onTimeUpdate={() => setCurrentTime(audioRef?.currentTime || 0)}
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => { setIsPlaying(false); setCurrentTime(0) }}
+            preload="auto"
+            onPlay={() => { setIsPlaying(true); startProgressAnimation() }}
+            onPause={() => { setIsPlaying(false); stopProgressAnimation() }}
+            onEnded={() => { setIsPlaying(false); stopProgressAnimation(); setCurrentTime(0) }}
             onLoadedMetadata={() => setAudioDuration(audioRef?.duration || 0)}
+            onSeeked={() => setCurrentTime(audioRef?.currentTime || 0)}
             class="hidden"
           />
         </div>
@@ -591,63 +701,68 @@ export default function App() {
           </div>
         </div>
 
-        {/* Voice selector */}
+        {/* Voice selector - jukebox style */}
         <div class="px-2 pb-2">
           <div class="panel-inset p-2">
-            <div class="flex justify-between items-center mb-2">
-              <div class="text-[10px] sm:text-xs text-text-dim uppercase tracking-wider">
-                Voice: <span class="text-lcd-green">{selectedVoiceName()}</span>
-              </div>
+            {/* Jukebox display */}
+            <div class="flex items-center gap-2">
+              {/* Prev button */}
               <button
-                class="btn-win text-[10px]"
-                onClick={() => setShowAllVoices(!showAllVoices())}
+                class="btn-win p-2"
+                onClick={prevVoice}
+                title="Previous voice (←)"
               >
-                {showAllVoices() ? 'LESS' : 'MORE'}
+                <span class="i-mdi-chevron-left w-4 h-4" />
+              </button>
+
+              {/* Voice display */}
+              <div
+                class="flex-1 text-center py-2 px-3"
+                style={{
+                  background: 'linear-gradient(180deg, #010409 0%, #0d1117 100%)',
+                  border: '2px solid',
+                  'border-color': '#010409 #30363d #30363d #010409',
+                  'box-shadow': 'inset 0 2px 4px rgba(0,0,0,0.5)',
+                }}
+              >
+                <div class="text-lg sm:text-xl text-lcd-green font-bold tracking-wide">
+                  {currentVoice().name}
+                </div>
+                <div class="flex justify-center items-center gap-3 text-[10px] sm:text-xs mt-1">
+                  <span class="text-text-dim">
+                    {currentVoice().accent} · {currentVoice().gender === 'F' ? '♀' : '♂'}
+                  </span>
+                  <span class="text-lcd-yellow font-mono">
+                    {currentVoice().price}¢/1k
+                  </span>
+                </div>
+                <div class="text-[9px] text-text-dim mt-1">
+                  {voiceIndex() + 1} / {VOICES.length}
+                </div>
+              </div>
+
+              {/* Next button */}
+              <button
+                class="btn-win p-2"
+                onClick={nextVoice}
+                title="Next voice (→)"
+              >
+                <span class="i-mdi-chevron-right w-4 h-4" />
               </button>
             </div>
 
-            {/* Featured voices */}
-            <div class="flex flex-wrap gap-1">
-              <For each={featuredVoices()}>{v => (
+            {/* Quick select grid */}
+            <div class="mt-2 flex flex-wrap gap-1 justify-center">
+              <For each={VOICES}>{(v, i) => (
                 <button
-                  class={`btn-win text-[10px] sm:text-xs relative ${voice() === v.id ? 'primary' : ''}`}
-                  onClick={() => setVoice(v.id)}
-                  onMouseEnter={() => previewVoice(v.id)}
-                  onMouseLeave={stopPreview}
+                  class={`btn-win w-6 h-6 text-[10px] font-mono ${voice() === v.id ? 'primary' : ''}`}
+                  onClick={() => selectVoice(v.id)}
+                  title={`${v.name} (${v.accent})`}
                 >
-                  <Show when={previewingVoice() === v.id}>
-                    <span class="absolute -top-1 -right-1 w-2 h-2 bg-lcd-green rounded-full animate-pulse" />
-                  </Show>
-                  {v.name}
+                  {i() + 1 <= 9 ? i() + 1 : i() + 1 === 10 ? '0' : ''}
                 </button>
               )}</For>
             </div>
-
-            {/* All voices expandable */}
-            <Show when={showAllVoices()}>
-              <div class="mt-3 pt-3 border-t border-border-dark space-y-3">
-                <For each={Object.entries(ALL_VOICES)}>{([category, voices]) => (
-                  <div>
-                    <div class="text-[9px] sm:text-[10px] text-text-dim mb-1 uppercase">{category}</div>
-                    <div class="flex flex-wrap gap-1">
-                      <For each={voices}>{v => (
-                        <button
-                          class={`btn-win text-[10px] sm:text-xs relative ${voice() === v.id ? 'primary' : ''}`}
-                          onClick={() => setVoice(v.id)}
-                          onMouseEnter={() => previewVoice(v.id)}
-                          onMouseLeave={stopPreview}
-                        >
-                          <Show when={previewingVoice() === v.id}>
-                            <span class="absolute -top-1 -right-1 w-2 h-2 bg-lcd-green rounded-full animate-pulse" />
-                          </Show>
-                          {v.name}
-                        </button>
-                      )}</For>
-                    </div>
-                  </div>
-                )}</For>
-              </div>
-            </Show>
           </div>
         </div>
 
@@ -733,11 +848,11 @@ export default function App() {
                 <div class="flex-1">
                   <div class="text-red-300 text-xs font-semibold mb-1">FREE TIER LIMIT REACHED</div>
                   <p class="text-red-200/70 text-[10px] mb-3">
-                    You've used your daily free quota ({freeRemaining()} chars remaining).
-                    {user() ? ' Add balance to continue.' : ' Login or create an account to add balance.'}
+                    You've used your daily free quota ({store.freeRemaining} chars remaining).
+                    {store.user ? ' Add balance to continue.' : ' Login or create an account to add balance.'}
                   </p>
                   <div class="flex gap-2">
-                    <Show when={!user()}>
+                    <Show when={!store.user}>
                       <button
                         class="btn-win primary text-[10px]"
                         onClick={() => { setShowLimitError(false); setShowAuth(true) }}
@@ -745,7 +860,7 @@ export default function App() {
                         LOGIN / REGISTER
                       </button>
                     </Show>
-                    <Show when={user()}>
+                    <Show when={store.user}>
                       <button class="btn-win primary text-[10px]">
                         ADD BALANCE
                       </button>
@@ -764,7 +879,7 @@ export default function App() {
         </Show>
 
         {/* History */}
-        <Show when={history().length > 0}>
+        <Show when={store.history.length > 0}>
           <div class="px-2 pb-2">
             <div class="panel-inset p-2">
               <div class="flex items-center gap-2 mb-2">
@@ -797,7 +912,7 @@ export default function App() {
                   >
                     <button
                       class="flex-shrink-0 cursor-pointer bg-transparent border-none p-0"
-                      onClick={() => loadAndPlay(item.url, item.text, item.duration)}
+                      onClick={() => loadAndPlay(item.url, item.text, item.duration, item.jobId)}
                       title="Play"
                     >
                       <span class={`w-3 h-3 block ${
@@ -808,7 +923,7 @@ export default function App() {
                     </button>
                     <span
                       class="flex-1 truncate cursor-pointer"
-                      onClick={() => loadAndPlay(item.url, item.text, item.duration)}
+                      onClick={() => loadAndPlay(item.url, item.text, item.duration, item.jobId)}
                     >{item.text}</span>
                     <button
                       class="flex-shrink-0 cursor-pointer bg-transparent border-none p-0 opacity-0 group-hover:opacity-100"
@@ -833,8 +948,8 @@ export default function App() {
 
         {/* Footer stats */}
         <div class="flex justify-center gap-4 sm:gap-6 py-2 sm:py-3 border-t border-border-dark text-[10px] sm:text-xs text-text-dim">
-          <span>{stats().generated} generated</span>
-          <span>{stats().chars.toLocaleString()} chars</span>
+          <span>{store.stats.generated} generated</span>
+          <span>{store.stats.chars.toLocaleString()} chars</span>
         </div>
       </div>
 
@@ -853,6 +968,16 @@ export default function App() {
           </div>
         }>
           <AuthModal onClose={() => setShowAuth(false)} onLogin={onLogin} />
+        </Suspense>
+      </Show>
+
+      <Show when={showProfile()}>
+        <Suspense fallback={
+          <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+            <div class="text-lcd-green animate-pulse">LOADING...</div>
+          </div>
+        }>
+          <ProfilePage onClose={() => setShowProfile(false)} />
         </Suspense>
       </Show>
 
