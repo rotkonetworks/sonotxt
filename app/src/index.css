@@ -182,3 +182,104 @@ audio::-webkit-media-controls-panel {
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #4a4a4a 0%, #3a3a3a 100%);
 }
+
+/* Passkey auth styles */
+.passkey-auth {
+  font-size: 12px;
+}
+
+.passkey-auth .hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.passkey-auth .primary-btn {
+  background: linear-gradient(180deg, #ec4899 0%, #be185d 100%);
+  border: 1px solid #f472b6;
+  color: #fff;
+  padding: 10px 20px;
+  font-size: 11px;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.passkey-auth .primary-btn:hover {
+  background: linear-gradient(180deg, #f472b6 0%, #db2777 100%);
+}
+
+.passkey-auth .primary-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.passkey-auth .text-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin-top: 8px;
+}
+
+.passkey-auth .text-btn:hover {
+  color: var(--text);
+}
+
+.passkey-auth .text-btn.danger:hover {
+  color: #ef4444;
+}
+
+.passkey-auth .link-btn {
+  background: none;
+  border: none;
+  color: var(--lcd-green);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-decoration: underline;
+}
+
+.passkey-auth .linux-help {
+  margin-top: 12px;
+  padding: 12px;
+  background: #0d1117;
+  border: 1px solid #21262d;
+}
+
+.passkey-auth .linux-help a {
+  display: block;
+  margin-top: 8px;
+  color: var(--lcd-green);
+}
+
+.passkey-auth .error {
+  color: #ef4444;
+  font-size: 11px;
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.passkey-auth .status {
+  color: var(--lcd-green);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.passkey-auth .passkey-unlocked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Resize handle styling for desktop */
+@media (min-width: 1024px) {
+  .panel::-webkit-resizer {
+    background: linear-gradient(135deg, transparent 60%, var(--border-light) 60%);
+  }
+}

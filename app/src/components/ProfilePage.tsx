@@ -1,11 +1,12 @@
 import { createSignal, createEffect, Show, For } from 'solid-js'
 import { useStore } from '../lib/store'
+import PasskeyAuth from './PasskeyAuth'
 
 interface Props {
   onClose: () => void
 }
 
-type Tab = 'overview' | 'deposits' | 'api-keys' | 'history'
+type Tab = 'overview' | 'deposits' | 'api-keys' | 'history' | 'security' | 'private'
 
 interface Deposit {
   id: string
@@ -25,12 +26,17 @@ interface DepositAddresses {
 const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
 
 export default function ProfilePage(props: Props) {
-  const { state: store, token } = useStore()
+  const { state: store, token, actions } = useStore()
   const [tab, setTab] = createSignal<Tab>('overview')
   const [addresses, setAddresses] = createSignal<DepositAddresses>({})
   const [deposits, setDeposits] = createSignal<Deposit[]>([])
   const [loading, setLoading] = createSignal(false)
   const [copied, setCopied] = createSignal<string | null>(null)
+
+  // Private mode local UI state (connection status is in store)
+  const [teeUrl, setTeeUrl] = createSignal(localStorage.getItem('tee_url') || 'ws://localhost:4434/ws')
+  const [teeConnecting, setTeeConnecting] = createSignal(false)
+  const [teeError, setTeeError] = createSignal<string | null>(null)
 
   // Fetch deposit addresses and history
   createEffect(async () => {
@@ -119,11 +125,13 @@ export default function ProfilePage(props: Props) {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', 'border-bottom': '1px solid #21262d' }}>
+        <div style={{ display: 'flex', 'border-bottom': '1px solid #21262d', 'overflow-x': 'auto' }}>
           <button style={tabStyle('overview')} onClick={() => setTab('overview')}>Overview</button>
           <button style={tabStyle('deposits')} onClick={() => setTab('deposits')}>Deposits</button>
           <button style={tabStyle('api-keys')} onClick={() => setTab('api-keys')}>API Keys</button>
           <button style={tabStyle('history')} onClick={() => setTab('history')}>History</button>
+          <button style={tabStyle('security')} onClick={() => setTab('security')}>Security</button>
+          <button style={tabStyle('private')} onClick={() => setTab('private')}>Private</button>
         </div>
 
         {/* Content */}
@@ -140,7 +148,7 @@ export default function ProfilePage(props: Props) {
                 <div class="text-[10px] text-text-dim uppercase mb-1">Account Balance</div>
                 <div class="text-2xl text-lcd-green font-mono">${store.user?.balance.toFixed(2)}</div>
                 <div class="text-[10px] text-text-dim mt-2">
-                  ~{((store.user?.balance || 0) / 0.10 * 60).toFixed(0)} seconds of TTS
+                  ~{((store.user?.balance || 0) / 0.0000016 / 1000).toFixed(0)}k chars @ $1.60/M
                 </div>
               </div>
 
@@ -370,6 +378,173 @@ export default function ProfilePage(props: Props) {
                   )}
                 </For>
               </Show>
+            </div>
+          </Show>
+
+          {/* Security Tab */}
+          <Show when={tab() === 'security'}>
+            <div class="space-y-4">
+              {/* Passkey Section */}
+              <div style={{
+                background: '#0d1117',
+                border: '1px solid #21262d',
+                padding: '16px',
+              }}>
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="i-mdi-fingerprint text-accent w-5 h-5" />
+                  <span class="text-sm text-text-bright font-semibold">Passkey Authentication</span>
+                </div>
+                <p class="text-xs text-text-dim mb-4">
+                  Use your device's biometrics (fingerprint, face, or PIN) to encrypt your history locally.
+                  No passwords to remember, and your data never leaves your device unencrypted.
+                </p>
+                <PasskeyAuth />
+              </div>
+
+              {/* Features List */}
+              <div style={{
+                background: '#0d1117',
+                border: '1px solid #21262d',
+                padding: '12px',
+              }}>
+                <div class="text-[10px] text-text-dim uppercase mb-2">Features</div>
+                <div class="space-y-2 text-xs">
+                  <div class="flex items-center gap-2">
+                    <span class="i-mdi-check-circle text-green-400 w-4 h-4" />
+                    <span class="text-text-dim">Works on Windows (Hello), macOS (Touch ID), Android, iOS</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="i-mdi-check-circle text-green-400 w-4 h-4" />
+                    <span class="text-text-dim">PRF-derived encryption key (AES-256-GCM)</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="i-mdi-check-circle text-green-400 w-4 h-4" />
+                    <span class="text-text-dim">Zero knowledge - server never sees your key</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Show>
+
+          {/* Private Mode Tab */}
+          <Show when={tab() === 'private'}>
+            <div class="space-y-4">
+              {/* Description */}
+              <div style={{
+                background: '#0d1117',
+                border: '1px solid #21262d',
+                padding: '16px',
+              }}>
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="i-mdi-shield-lock text-purple-400 w-5 h-5" />
+                  <span class="text-sm text-text-bright font-semibold">Private TTS Mode</span>
+                </div>
+                <p class="text-xs text-text-dim mb-3">
+                  Connect directly to a TEE (Trusted Execution Environment) server for end-to-end encrypted inference.
+                  Your text is encrypted in the browser using Noise protocol before being sent to the TEE,
+                  ensuring the server operator cannot read your data.
+                </p>
+                <div class="flex items-center gap-2 text-[10px]">
+                  <span class="i-mdi-check-circle text-green-400 w-3 h-3" />
+                  <span class="text-text-dim">E2E Encrypted (Noise_NK)</span>
+                  <span class="i-mdi-check-circle text-green-400 w-3 h-3 ml-2" />
+                  <span class="text-text-dim">TEE Attested (SEV-SNP/TDX)</span>
+                </div>
+              </div>
+
+              {/* Connection Form */}
+              <div style={{
+                background: '#0d1117',
+                border: '1px solid #21262d',
+                padding: '16px',
+              }}>
+                <div class="text-[10px] text-text-dim uppercase mb-3">Server Configuration</div>
+                <div class="space-y-3">
+                  <div>
+                    <label class="text-[10px] text-text-dim block mb-1">WebSocket URL</label>
+                    <input
+                      type="text"
+                      class="w-full px-3 py-2 bg-bg-dark border border-border-dark text-lcd-green font-mono text-xs rounded"
+                      placeholder="ws://localhost:4434/ws"
+                      value={teeUrl()}
+                      onInput={(e) => {
+                        setTeeUrl(e.currentTarget.value)
+                        localStorage.setItem('tee_url', e.currentTarget.value)
+                      }}
+                    />
+                  </div>
+
+                  <Show when={teeError()}>
+                    <div class="text-xs text-red-400 bg-red-900/20 p-2 rounded">
+                      {teeError()}
+                    </div>
+                  </Show>
+
+                  <Show when={store.tee.connected && store.tee.attestation}>
+                    <div class="bg-green-900/20 border border-green-800 p-3 rounded">
+                      <div class="flex items-center gap-2 text-green-400 text-xs mb-2">
+                        <span class="i-mdi-check-circle w-4 h-4" />
+                        Connected &amp; Verified
+                      </div>
+                      <div class="space-y-1 text-[10px]">
+                        <div class="flex justify-between">
+                          <span class="text-text-dim">TEE Type</span>
+                          <span class="text-lcd-green font-mono">{store.tee.attestation?.teeType}</span>
+                        </div>
+                        <div class="flex justify-between">
+                          <span class="text-text-dim">Static Key</span>
+                          <span class="text-lcd-green font-mono truncate ml-2" style={{ 'max-width': '200px' }}>
+                            {Array.from(store.tee.attestation?.staticKey.slice(0, 8) || []).map(b => b.toString(16).padStart(2, '0')).join('')}...
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </Show>
+
+                  <button
+                    style={{
+                      background: store.tee.connected
+                        ? 'linear-gradient(180deg, #dc2626 0%, #991b1b 100%)'
+                        : 'linear-gradient(180deg, #7c3aed 0%, #5b21b6 100%)',
+                      border: '1px solid',
+                      'border-color': store.tee.connected ? '#f87171' : '#a78bfa',
+                      color: '#fff',
+                      padding: '10px 20px',
+                      'font-size': '11px',
+                      cursor: teeConnecting() ? 'wait' : 'pointer',
+                      width: '100%',
+                    }}
+                    disabled={teeConnecting()}
+                    onClick={async () => {
+                      if (store.tee.connected) {
+                        actions.disconnectTee()
+                        return
+                      }
+
+                      setTeeConnecting(true)
+                      setTeeError(null)
+                      try {
+                        await actions.connectTee(teeUrl())
+                      } catch (err) {
+                        setTeeError(err instanceof Error ? err.message : 'Connection failed')
+                      }
+                      setTeeConnecting(false)
+                    }}
+                  >
+                    <Show when={teeConnecting()} fallback={
+                      store.tee.connected ? 'Disconnect' : 'Connect to TEE'
+                    }>
+                      <span class="animate-pulse">Connecting...</span>
+                    </Show>
+                  </button>
+                </div>
+              </div>
+
+              {/* Warning */}
+              <div class="text-[10px] text-text-dim">
+                <span class="i-mdi-information-outline w-3 h-3 inline-block mr-1" />
+                Private mode requires a running kokoro-tee server. In insecure mode, attestation is simulated.
+              </div>
             </div>
           </Show>
         </div>

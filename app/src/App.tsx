@@ -5,6 +5,7 @@ import { useStore } from './lib/store'
 import * as api from './lib/api'
 import type { User } from './lib/api'
 import ProfileDropdown from './components/ProfileDropdown'
+import type { StreamChunk } from './lib/teeClient'
 
 // Fetch voices with createResource - auto-cached, suspense-ready
 const fetchVoicesData = async () => {
@@ -18,37 +19,43 @@ const fetchVoicesData = async () => {
 
 const AuthModal = lazy(() => import('./components/AuthModal'))
 const ProfilePage = lazy(() => import('./components/ProfilePage'))
+const DocsPage = lazy(() => import('./components/DocsPage'))
 
 interface Voice {
   id: string
   name: string
   accent: string
   gender: string
-  price: number // tokens per 1000 chars
+  markup: number // multiplier over deepinfra base ($0.80/M)
 }
+
+// deepinfra kokoro base: $0.80/M chars = $0.0000008/char
+const DEEPINFRA_BASE = 0.0000008
+const US_MARKUP = 2.0   // $1.60/M chars
+const UK_MARKUP = 2.7   // $2.16/M (2x * 1.35 gbp/usd)
 
 // All voices in a flat list for jukebox navigation
 const VOICES: Voice[] = [
-  // American Female - standard price
-  { id: 'af_bella', name: 'Bella', accent: 'US', gender: 'F', price: 1 },
-  { id: 'af_nicole', name: 'Nicole', accent: 'US', gender: 'F', price: 1 },
-  { id: 'af_sarah', name: 'Sarah', accent: 'US', gender: 'F', price: 1 },
-  { id: 'af_sky', name: 'Sky', accent: 'US', gender: 'F', price: 1 },
-  { id: 'af_nova', name: 'Nova', accent: 'US', gender: 'F', price: 2 },
-  { id: 'af_river', name: 'River', accent: 'US', gender: 'F', price: 1 },
+  // American Female
+  { id: 'af_bella', name: 'Bella', accent: 'US', gender: 'F', markup: US_MARKUP },
+  { id: 'af_nicole', name: 'Nicole', accent: 'US', gender: 'F', markup: US_MARKUP },
+  { id: 'af_sarah', name: 'Sarah', accent: 'US', gender: 'F', markup: US_MARKUP },
+  { id: 'af_sky', name: 'Sky', accent: 'US', gender: 'F', markup: US_MARKUP },
+  { id: 'af_nova', name: 'Nova', accent: 'US', gender: 'F', markup: US_MARKUP },
+  { id: 'af_river', name: 'River', accent: 'US', gender: 'F', markup: US_MARKUP },
   // American Male
-  { id: 'am_adam', name: 'Adam', accent: 'US', gender: 'M', price: 1 },
-  { id: 'am_michael', name: 'Michael', accent: 'US', gender: 'M', price: 1 },
-  { id: 'am_eric', name: 'Eric', accent: 'US', gender: 'M', price: 1 },
-  { id: 'am_liam', name: 'Liam', accent: 'US', gender: 'M', price: 2 },
-  // British Female
-  { id: 'bf_emma', name: 'Emma', accent: 'UK', gender: 'F', price: 2 },
-  { id: 'bf_alice', name: 'Alice', accent: 'UK', gender: 'F', price: 2 },
-  { id: 'bf_lily', name: 'Lily', accent: 'UK', gender: 'F', price: 2 },
-  // British Male
-  { id: 'bm_george', name: 'George', accent: 'UK', gender: 'M', price: 2 },
-  { id: 'bm_daniel', name: 'Daniel', accent: 'UK', gender: 'M', price: 2 },
-  { id: 'bm_lewis', name: 'Lewis', accent: 'UK', gender: 'M', price: 2 },
+  { id: 'am_adam', name: 'Adam', accent: 'US', gender: 'M', markup: US_MARKUP },
+  { id: 'am_michael', name: 'Michael', accent: 'US', gender: 'M', markup: US_MARKUP },
+  { id: 'am_eric', name: 'Eric', accent: 'US', gender: 'M', markup: US_MARKUP },
+  { id: 'am_liam', name: 'Liam', accent: 'US', gender: 'M', markup: US_MARKUP },
+  // British Female - gbp markup
+  { id: 'bf_emma', name: 'Emma', accent: 'UK', gender: 'F', markup: UK_MARKUP },
+  { id: 'bf_alice', name: 'Alice', accent: 'UK', gender: 'F', markup: UK_MARKUP },
+  { id: 'bf_lily', name: 'Lily', accent: 'UK', gender: 'F', markup: UK_MARKUP },
+  // British Male - gbp markup
+  { id: 'bm_george', name: 'George', accent: 'UK', gender: 'M', markup: UK_MARKUP },
+  { id: 'bm_daniel', name: 'Daniel', accent: 'UK', gender: 'M', markup: UK_MARKUP },
+  { id: 'bm_lewis', name: 'Lewis', accent: 'UK', gender: 'M', markup: UK_MARKUP },
 ]
 
 export default function App() {
@@ -81,6 +88,7 @@ export default function App() {
   const [hoverPct, setHoverPct] = createSignal<number | null>(null) // for tooltip on hover
   const [showAuth, setShowAuth] = createSignal(false)
   const [showProfile, setShowProfile] = createSignal(false)
+  const [showDocs, setShowDocs] = createSignal(false)
 
   let textareaRef: HTMLTextAreaElement | undefined
   let audioRef: HTMLAudioElement | undefined
@@ -234,9 +242,71 @@ export default function App() {
 
   let cancelJobWatch: (() => void) | null = null
 
+  async function generatePrivate() {
+    const t = text().trim()
+    const teeClient = actions.getTeeClient()
+    if (!teeClient) return
+
+    setLoading(true)
+    setStatus('ENCRYPTING...')
+    setAudioUrl('')
+
+    try {
+      const audioChunks: Uint8Array[] = []
+      let totalBytes = 0
+
+      await teeClient.synthesizeStream(t, voice(), 1.0, (chunk: StreamChunk) => {
+        if (chunk.error) {
+          throw new Error(chunk.error)
+        }
+        audioChunks.push(chunk.audio)
+        totalBytes += chunk.audio.length
+        setStatus(`STREAMING ${Math.round(totalBytes / 1024)}KB`)
+      })
+
+      // Combine chunks into single buffer
+      const combined = new Uint8Array(totalBytes)
+      let offset = 0
+      for (const chunk of audioChunks) {
+        combined.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      // Create blob URL for playback
+      const blob = new Blob([combined], { type: 'audio/opus' })
+      const blobUrl = URL.createObjectURL(blob)
+
+      setAudioUrl(blobUrl)
+      setCurrentJobId('')
+      setAudioTitle(t.slice(0, 60) + (t.length > 60 ? '...' : ''))
+      setStatus('READY')
+      setTimeout(() => audioRef?.play(), 100)
+
+      // Add to local history (no server-side tracking for private mode)
+      actions.addToHistory({
+        text: t.slice(0, 100),
+        url: blobUrl,
+        duration: 0, // Duration calculated after decode
+        voice: voice(),
+      })
+
+      setLoading(false)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Private generation failed'
+      showToast(message, 'error')
+      setStatus('ERROR')
+      setLoading(false)
+    }
+  }
+
   async function generate() {
     const t = text().trim()
     if (!t) return
+
+    // Use TEE if connected
+    if (store.tee.connected) {
+      return generatePrivate()
+    }
 
     if (!store.user && t.length > 1000) {
       showToast('Free tier limited to 1000 chars', 'error')
@@ -488,12 +558,12 @@ export default function App() {
         class="hidden"
       />
 
-      {/* Main panel - responsive width */}
-      <div class="panel w-full max-w-[95vw] sm:max-w-xl">
+      {/* Main panel - responsive width with horizontal resize on desktop */}
+      <div class="panel w-full max-w-[95vw] sm:max-w-xl lg:max-w-4xl xl:max-w-6xl lg:resize-x lg:overflow-auto" style={{ "min-width": "320px" }}>
         {/* Title bar */}
         <div class="titlebar cursor-move select-none">
           {/* Left: Window controls */}
-          <div class="flex gap-0.5">
+          <div class="flex gap-0.5 w-20">
             <button class="w-3 h-3 bg-lcd-red/80 hover:bg-lcd-red" title="Close" />
             <button class="w-3 h-3 bg-lcd-yellow/80 hover:bg-lcd-yellow" title="Minimize" />
             <button class="w-3 h-3 bg-lcd-green/80 hover:bg-lcd-green" title="Maximize" />
@@ -503,10 +573,18 @@ export default function App() {
           <div class="flex-1 flex items-center justify-center gap-2">
             <div class="i-mdi-waveform text-accent w-4 h-4" />
             <span class="text-text-bright font-medium">SONOTXT</span>
+            <Show when={store.tee.connected}>
+              <span class="text-[9px] px-1.5 py-0.5 bg-purple-600/30 text-purple-300 border border-purple-500/50 rounded"
+                title={`TEE: ${store.tee.attestation?.teeType || 'Connected'}`}
+              >
+                <span class="i-mdi-shield-lock w-2.5 h-2.5 mr-0.5" />
+                PRIVATE
+              </span>
+            </Show>
           </div>
 
           {/* Right: Free tier counter or Profile dropdown */}
-          <div class="flex items-center gap-2">
+          <div class="flex items-center justify-end gap-2 w-20 sm:w-32 lg:w-40">
             <Show when={store.user} fallback={
               <>
                 <span class="text-[10px] text-text-dim hidden sm:inline">FREE</span>
@@ -733,7 +811,7 @@ export default function App() {
                     {currentVoice().accent} · {currentVoice().gender === 'F' ? '♀' : '♂'}
                   </span>
                   <span class="text-lcd-yellow font-mono">
-                    {currentVoice().price}¢/1k
+                    ${(DEEPINFRA_BASE * currentVoice().markup * 1000000).toFixed(2)}/M
                   </span>
                 </div>
                 <div class="text-[9px] text-text-dim mt-1">
@@ -751,17 +829,42 @@ export default function App() {
               </button>
             </div>
 
-            {/* Quick select grid */}
-            <div class="mt-2 flex flex-wrap gap-1 justify-center">
-              <For each={VOICES}>{(v, i) => (
-                <button
-                  class={`btn-win w-6 h-6 text-[10px] font-mono ${voice() === v.id ? 'primary' : ''}`}
-                  onClick={() => selectVoice(v.id)}
-                  title={`${v.name} (${v.accent})`}
-                >
-                  {i() + 1 <= 9 ? i() + 1 : i() + 1 === 10 ? '0' : ''}
-                </button>
-              )}</For>
+            {/* Quick select - hidden on mobile, grouped by accent on larger screens */}
+            <div class="hidden sm:block mt-2 space-y-1">
+              {/* US voices */}
+              <div class="flex items-center gap-1 flex-wrap">
+                <span class="text-[9px] text-text-dim w-5">US</span>
+                <For each={VOICES.filter(v => v.accent === 'US')}>{(v) => (
+                  <button
+                    class={`px-1.5 py-0.5 text-[9px] rounded transition-all ${
+                      voice() === v.id
+                        ? 'bg-accent text-white'
+                        : 'bg-bg-light hover:bg-bg-mid text-text-dim hover:text-text'
+                    }`}
+                    onClick={() => selectVoice(v.id)}
+                    title={`${v.name} - ${v.gender === 'F' ? 'Female' : 'Male'}`}
+                  >
+                    {v.name.slice(0, 3)}
+                  </button>
+                )}</For>
+              </div>
+              {/* UK voices */}
+              <div class="flex items-center gap-1 flex-wrap">
+                <span class="text-[9px] text-text-dim w-5">UK</span>
+                <For each={VOICES.filter(v => v.accent === 'UK')}>{(v) => (
+                  <button
+                    class={`px-1.5 py-0.5 text-[9px] rounded transition-all ${
+                      voice() === v.id
+                        ? 'bg-accent text-white'
+                        : 'bg-bg-light hover:bg-bg-mid text-text-dim hover:text-text'
+                    }`}
+                    onClick={() => selectVoice(v.id)}
+                    title={`${v.name} - ${v.gender === 'F' ? 'Female' : 'Male'}`}
+                  >
+                    {v.name.slice(0, 3)}
+                  </button>
+                )}</For>
+              </div>
             </div>
           </div>
         </div>
@@ -814,6 +917,11 @@ export default function App() {
               <div class="flex justify-between items-center px-2 sm:px-3 py-2 border-t border-border-dark bg-bg-mid">
                 <span class={`text-[10px] sm:text-xs font-mono ${charCount() > 1000 ? 'text-lcd-red' : charCount() > 800 ? 'text-lcd-yellow' : 'text-lcd-green'}`}>
                   {charCount().toLocaleString()} chars
+                  {charCount() > 0 && (
+                    <span class="text-lcd-yellow ml-2">
+                      ~${(charCount() * DEEPINFRA_BASE * currentVoice().markup).toFixed(4)}
+                    </span>
+                  )}
                 </span>
                 <button
                   class="btn-win primary flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs"
@@ -957,6 +1065,8 @@ export default function App() {
       <div class="mt-3 sm:mt-4 text-[10px] sm:text-xs text-text-dim">
         <a href="https://rotko.net" class="hover:text-lcd-green">ROTKO NETWORKS</a>
         {' · '}
+        <button onClick={() => setShowDocs(true)} class="hover:text-purple-300">DOCS</button>
+        {' · '}
         <a href="/embed.js" class="hover:text-lcd-green">EMBED</a>
       </div>
 
@@ -978,6 +1088,16 @@ export default function App() {
           </div>
         }>
           <ProfilePage onClose={() => setShowProfile(false)} />
+        </Suspense>
+      </Show>
+
+      <Show when={showDocs()}>
+        <Suspense fallback={
+          <div class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+            <div class="text-lcd-green animate-pulse">LOADING...</div>
+          </div>
+        }>
+          <DocsPage onClose={() => setShowDocs(false)} />
         </Suspense>
       </Show>
 
