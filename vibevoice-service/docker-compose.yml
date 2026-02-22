@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  vibevoice:
+    build: .
+    ports:
+      - "8200:8200"
+    environment:
+      - PORT=8200
+      - VIBEVOICE_MODEL=microsoft/VibeVoice-TTS-1.5B
+      - TRANSFORMERS_CACHE=/cache
+    volumes:
+      - model-cache:/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  model-cache:
