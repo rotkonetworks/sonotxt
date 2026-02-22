@@ -1,3 +1,6 @@
 [submodule "rust"]
 	path = rust
 	url = https://github.com/hitchhooker/sonotxt-rust.git
+[submodule "hwpay"]
+	path = hwpay
+	url = https://github.com/hitchhooker/hwpay.git
