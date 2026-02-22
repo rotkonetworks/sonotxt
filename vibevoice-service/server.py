@@ -49,11 +49,14 @@ async def load_model():
 
     logger.info("loading vibevoice model...")
 
-    # check for gpu
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    logger.info(f"using device: {device}")
-
-    if device == "cpu":
+    # check for gpu (works with both nvidia cuda and amd rocm)
+    if torch.cuda.is_available():
+        device = "cuda"
+        device_name = torch.cuda.get_device_name(0)
+        device_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        logger.info(f"using device: {device_name} ({device_memory:.1f}GB vram)")
+    else:
+        device = "cpu"
         logger.warning("no gpu detected - inference will be slow!")
 
     try:
