@@ -135,6 +135,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libtss2-dev pkg-config
+
       - name: Build API server
         run: |
           cd rust
