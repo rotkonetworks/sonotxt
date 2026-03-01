@@ -6,60 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Landing page (sonotxt.com) - static HTML
-  deploy-landing:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download redbean
-        run: |
-          wget -q https://cosmo.zip/pub/cosmos/bin/ape-x86_64.elf -O ape
-          wget -q https://redbean.dev/redbean-2.2.com -O redbean.com
-          chmod +x ape redbean.com
-
-      - name: Pack landing page
-        run: |
-          cd landing && zip -r ../redbean.com .
-
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H www.rotko.net >> ~/.ssh/known_hosts
-
-      - name: Deploy landing
-        run: |
-          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-landing/
-          ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
-          set -e
-          cd /tmp/sonotxt-landing
-
-          podman stop sonotxt-landing 2>/dev/null || true
-          podman rm sonotxt-landing 2>/dev/null || true
-
-          sudo mkdir -p /srv/sonotxt/landing
-          sudo mv ape /srv/sonotxt/landing/ape
-          sudo mv redbean.com /srv/sonotxt/landing/redbean.com
-          sudo chmod +x /srv/sonotxt/landing/ape /srv/sonotxt/landing/redbean.com
-
-          # Run on port 8100 (haproxy routes sonotxt.com -> 127.0.0.1:8100)
-          podman run -d \
-            --name sonotxt-landing \
-            --restart=always \
-            -p 127.0.0.1:8100:80 \
-            -v /srv/sonotxt/landing/redbean.com:/redbean.com:ro \
-            -v /srv/sonotxt/landing/ape:/usr/bin/ape:ro \
-            alpine:latest /usr/bin/ape /redbean.com -vv -p 80
-
-          sleep 2
-          curl -sf http://127.0.0.1:8100/ > /dev/null && echo "Landing deploy OK"
-          EOF
-
-  # Dashboard (app.sonotxt.com) - Vite SPA
-  deploy-dashboard:
-    needs: deploy-landing
+  # App (sonotxt.com + app.sonotxt.com) - Vite SPA
+  deploy-app:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +22,7 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: app/pnpm-lock.yaml
 
-      - name: Build dashboard
+      - name: Build app
         run: |
           cd app
           pnpm install
@@ -86,7 +34,7 @@ jobs:
           wget -q https://redbean.dev/redbean-2.2.com -O redbean.com
           chmod +x ape redbean.com
 
-      - name: Pack dashboard
+      - name: Pack app
         run: |
           cd app/dist && zip -r ../../redbean.com .
 
@@ -97,32 +45,45 @@ jobs:
           chmod 600 ~/.ssh/id_deploy
           ssh-keyscan -H www.rotko.net >> ~/.ssh/known_hosts
 
-      - name: Deploy dashboard
+      - name: Deploy app
         run: |
-          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-dashboard/
+          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-app/
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
-          cd /tmp/sonotxt-dashboard
+          cd /tmp/sonotxt-app
 
+          # Stop old containers
+          podman stop sonotxt-landing 2>/dev/null || true
+          podman rm sonotxt-landing 2>/dev/null || true
           podman stop sonotxt-dashboard 2>/dev/null || true
           podman rm sonotxt-dashboard 2>/dev/null || true
 
-          sudo mkdir -p /srv/sonotxt/dashboard
-          sudo mv ape /srv/sonotxt/dashboard/ape
-          sudo mv redbean.com /srv/sonotxt/dashboard/redbean.com
-          sudo chmod +x /srv/sonotxt/dashboard/ape /srv/sonotxt/dashboard/redbean.com
+          sudo mkdir -p /srv/sonotxt/app
+          sudo cp ape /srv/sonotxt/app/ape
+          sudo cp redbean.com /srv/sonotxt/app/redbean.com
+          sudo chmod +x /srv/sonotxt/app/ape /srv/sonotxt/app/redbean.com
 
-          # Run on port 8101 (haproxy routes app.sonotxt.com -> 127.0.0.1:8101)
+          # sonotxt.com on port 8100
+          podman run -d \
+            --name sonotxt-landing \
+            --restart=always \
+            -p 127.0.0.1:8100:80 \
+            -v /srv/sonotxt/app/redbean.com:/redbean.com:ro \
+            -v /srv/sonotxt/app/ape:/usr/bin/ape:ro \
+            alpine:latest /usr/bin/ape /redbean.com -vv -p 80
+
+          # app.sonotxt.com on port 8101
           podman run -d \
             --name sonotxt-dashboard \
             --restart=always \
             -p 127.0.0.1:8101:80 \
-            -v /srv/sonotxt/dashboard/redbean.com:/redbean.com:ro \
-            -v /srv/sonotxt/dashboard/ape:/usr/bin/ape:ro \
+            -v /srv/sonotxt/app/redbean.com:/redbean.com:ro \
+            -v /srv/sonotxt/app/ape:/usr/bin/ape:ro \
             alpine:latest /usr/bin/ape /redbean.com -vv -p 80
 
           sleep 2
-          curl -sf http://127.0.0.1:8101/ > /dev/null && echo "Dashboard deploy OK"
+          curl -sf http://127.0.0.1:8100/ > /dev/null && echo "sonotxt.com deploy OK"
+          curl -sf http://127.0.0.1:8101/ > /dev/null && echo "app.sonotxt.com deploy OK"
           EOF
 
   # API server (api.sonotxt.com) - Rust binary
@@ -199,7 +160,7 @@ jobs:
 
   # CDN (cdn.sonotxt.com) - embed.js + static files
   deploy-cdn:
-    needs: deploy-dashboard
+    needs: deploy-app
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
