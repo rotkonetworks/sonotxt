@@ -59,6 +59,7 @@ jobs:
 
   # Dashboard (app.sonotxt.com) - Vite SPA
   deploy-dashboard:
+    needs: deploy-landing
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -198,6 +199,7 @@ jobs:
 
   # CDN (cdn.sonotxt.com) - embed.js + static files
   deploy-cdn:
+    needs: deploy-dashboard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
