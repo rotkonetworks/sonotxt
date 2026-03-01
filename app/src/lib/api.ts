@@ -47,6 +47,7 @@ async function request<T>(
 export interface TtsRequest {
   text: string
   voice: string
+  engine?: string // "kokoro" | "vibevoice" | "vibevoice-streaming"
 }
 
 export interface TtsResponse {
@@ -77,9 +78,16 @@ export async function extractUrl(url: string): Promise<ExtractResponse> {
 }
 
 // Voices
+export interface VoiceEntry {
+  id: string
+  sample_url: string
+}
+
 export interface VoicesResponse {
-  voices: Record<string, { id: string; name: string; accent: string; gender: string }[]>
-  samples_base_url?: string
+  voices: VoiceEntry[]
+  default: string
+  samples_base_url: string
+  categories: Record<string, string[]>
 }
 
 export async function fetchVoices(): Promise<VoicesResponse> {

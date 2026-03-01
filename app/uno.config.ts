@@ -14,41 +14,43 @@ export default defineConfig({
   ],
   theme: {
     colors: {
-      // Dark blue palette with pink accents
-      bg: {
-        dark: '#0d1117',
-        mid: '#161b22',
-        light: '#21262d',
+      // backgrounds
+      page: 'var(--bg)',
+      surface: 'var(--surface)',
+      // foreground
+      fg: {
+        DEFAULT: 'var(--fg)',
+        muted: 'var(--fg-muted)',
+        faint: 'var(--fg-faint)',
       },
-      border: {
-        dark: '#010409',
-        light: '#30363d',
-        highlight: '#484f58',
+      // accent
+      accent: {
+        DEFAULT: 'var(--accent)',
+        hover: 'var(--accent-hover)',
+        strong: 'var(--accent-strong)',
+        soft: 'var(--accent-soft)',
+        muted: 'var(--accent-muted)',
+        faint: 'var(--accent-faint)',
       },
-      lcd: {
-        green: '#00ff00',
-        yellow: '#ffcc00',
-        red: '#ff0000',
-        pink: '#ec4899',
-        bg: '#0a0f0a',
+      // borders
+      edge: {
+        DEFAULT: 'var(--border)',
+        soft: 'var(--border-soft)',
       },
-      text: {
-        DEFAULT: '#b8b8b8',
-        dim: '#666666',
-        bright: '#ffffff',
-      },
-      accent: '#be185d',
-      'accent-hover': '#9f1239',
+    },
+    fontFamily: {
+      heading: ['Space Grotesk', 'sans-serif'],
+      serif: ['IBM Plex Serif', 'serif'],
+      mono: ['IBM Plex Mono', 'monospace'],
+    },
+    boxShadow: {
+      sharp: 'var(--shadow)',
     },
   },
   shortcuts: {
-    // Winamp-style buttons
-    'btn-win': 'border border-solid cursor-pointer text-11px font-semibold uppercase tracking-wider py-1 px-3',
-    'btn-win-primary': 'btn-win text-white',
-    // Panels
-    'panel': 'border border-solid',
-    'panel-inset': 'bg-bg-dark border border-solid shadow-inner',
-    // LCD display
-    'lcd': 'bg-lcd-bg font-mono text-lcd-green',
+    'btn-win': 'bg-surface border-2 border-edge text-fg font-heading cursor-pointer text-11px font-semibold uppercase tracking-wider py-1 px-3 hover:bg-page',
+    'btn-win-primary': 'btn-win bg-accent text-white hover:bg-accent-hover',
+    'panel': 'bg-surface border-2 border-edge shadow-sharp',
+    'panel-inset': 'bg-page border border-edge-soft',
   },
 })

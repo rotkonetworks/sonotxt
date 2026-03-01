@@ -1,18 +1,21 @@
-/* Dark blue theme with pink accents */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Serif:wght@400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* theme variables — swap these for a different palette */
 :root {
-  --bg-dark: #0d1117;
-  --bg-mid: #161b22;
-  --bg-light: #21262d;
-  --border-dark: #010409;
-  --border-light: #30363d;
-  --text: #c9d1d9;
-  --text-dim: #8b949e;
-  --lcd-green: #00ff00;
-  --lcd-yellow: #ffcc00;
-  --lcd-pink: #ec4899;
-  --accent: #be185d;
-  --accent-light: #ec4899;
-  --accent-hover: #9f1239;
+  --bg: #fff1f2;
+  --surface: #ffffff;
+  --fg: #27272a;
+  --fg-muted: #71717a;
+  --fg-faint: #a1a1aa;
+  --accent: #e11d48;
+  --accent-hover: #be123c;
+  --accent-strong: #881337;
+  --accent-soft: #ffe4e6;
+  --accent-muted: #fecdd3;
+  --accent-faint: #fda4af;
+  --border: #881337;
+  --border-soft: #fecdd3;
+  --shadow: 0.25rem 0.25rem 0 0 #881337;
 }
 
 * {
@@ -25,64 +28,61 @@ html {
 
 body {
   margin: 0;
-  background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
-  color: var(--text);
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'IBM Plex Serif', serif;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Beveled panel effect - blue tinted */
+/* panel — sharp shadow blog style */
 .panel {
-  background: linear-gradient(180deg, #21262d 0%, #161b22 100%);
-  border: 1px solid;
-  border-color: #30363d #0d1117 #0d1117 #30363d;
-  box-shadow:
-    inset 1px 1px 0 rgba(255,255,255,0.03),
-    inset -1px -1px 0 rgba(0,0,0,0.3),
-    0 8px 32px rgba(0,0,0,0.4);
+  background: var(--surface);
+  border: 2px solid var(--border);
+  box-shadow: var(--shadow);
 }
 
 .panel-inset {
-  background: #0d1117;
-  border: 1px solid;
-  border-color: #010409 #21262d #21262d #010409;
-  box-shadow: inset 1px 1px 3px rgba(0,0,0,0.5);
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
 }
 
-/* LCD display effect - blue tinted */
-.lcd {
-  background: linear-gradient(180deg, #0d1117 0%, #010409 100%);
-  border: 1px solid;
-  border-color: #010409 #21262d #21262d #010409;
-  box-shadow: inset 0 0 15px rgba(0,0,0,0.5);
-  color: var(--lcd-pink);
-  font-family: 'Courier New', monospace;
-  text-shadow: 0 0 8px rgba(236, 72, 153, 0.4);
+/* title bar */
+.titlebar {
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
-/* Button - blue themed */
+/* button — flat blog style */
 .btn-win {
-  background: linear-gradient(180deg, #30363d 0%, #21262d 50%, #21262d 50%, #161b22 100%);
-  border: 1px solid;
-  border-color: #484f58 #0d1117 #0d1117 #484f58;
-  color: var(--text);
+  background: var(--surface);
+  border: 2px solid var(--border);
+  color: var(--fg);
   cursor: pointer;
+  font-family: 'Space Grotesk', sans-serif;
   font-size: 11px;
   font-weight: 600;
   padding: 4px 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  transition: none;
+  transition: background 0.15s;
 }
 
 .btn-win:hover {
-  background: linear-gradient(180deg, #3d444d 0%, #30363d 50%, #30363d 50%, #21262d 100%);
+  background: var(--bg);
 }
 
 .btn-win:active {
-  background: linear-gradient(180deg, #161b22 0%, #21262d 50%, #21262d 50%, #161b22 100%);
-  border-color: #0d1117 #484f58 #484f58 #0d1117;
+  background: var(--accent-soft);
 }
 
 .btn-win:disabled {
@@ -91,66 +91,23 @@ body {
 }
 
 .btn-win.primary {
-  background: linear-gradient(180deg, #ec4899 0%, #be185d 50%, #be185d 50%, #db2777 100%);
-  border-color: #f472b6 #831843 #831843 #f472b6;
+  background: var(--accent);
+  border-color: var(--border);
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .btn-win.primary:hover {
-  background: linear-gradient(180deg, #f472b6 0%, #db2777 50%, #db2777 50%, #ec4899 100%);
+  background: var(--accent-hover);
 }
 
-/* Title bar - blue themed */
-.titlebar {
-  background: linear-gradient(180deg, #21262d 0%, #161b22 100%);
-  border-bottom: 1px solid #0d1117;
-  padding: 4px 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-/* Slider/progress bar - pink themed */
-.progress-track {
-  background: linear-gradient(180deg, #010409 0%, #0d1117 100%);
-  border: 2px solid;
-  border-color: #010409 #30363d #30363d #010409;
-  height: 16px;
-  position: relative;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
-}
-
-.progress-fill {
-  background: linear-gradient(180deg, #f472b6 0%, #ec4899 30%, #be185d 70%, #9f1239 100%);
-  height: 100%;
-  box-shadow: 0 0 8px rgba(236, 72, 153, 0.6), inset 0 1px 0 rgba(255,255,255,0.2);
-  transition: width 0.1s ease-out;
-}
-
-/* Visualizer bars effect - pink themed */
-@keyframes bar-pulse {
-  0%, 100% { height: 30%; }
-  50% { height: 100%; }
-}
-
-.viz-bar {
-  background: linear-gradient(180deg, #ec4899 0%, #be185d 50%, #9f1239 100%);
-  animation: bar-pulse 0.5s ease-in-out infinite;
-}
-
-/* Reset some defaults */
+/* reset */
 button {
   border-radius: 0;
   font-family: inherit;
 }
 
 a {
-  color: var(--lcd-green);
+  color: var(--accent);
   text-decoration: none;
 }
 
@@ -158,55 +115,52 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Audio player override */
+/* audio player override */
 audio {
   height: 32px;
-  filter: grayscale(100%) brightness(0.8);
 }
 
-audio::-webkit-media-controls-panel {
-  background: #1a1a1a;
-}
-
-/* Scrollbar */
+/* scrollbar */
 ::-webkit-scrollbar {
-  width: 12px;
-  background: #1a1a1a;
+  width: 10px;
+  background: var(--accent-soft);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
-  border: 1px solid #4a4a4a;
+  background: var(--accent-faint);
+  border: 1px solid var(--accent-muted);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #4a4a4a 0%, #3a3a3a 100%);
+  background: var(--accent);
 }
 
-/* Passkey auth styles */
+/* passkey auth styles */
 .passkey-auth {
   font-size: 12px;
 }
 
 .passkey-auth .hint {
   font-size: 10px;
-  color: var(--text-dim);
+  color: var(--fg-muted);
   margin-top: 4px;
 }
 
 .passkey-auth .primary-btn {
-  background: linear-gradient(180deg, #ec4899 0%, #be185d 100%);
-  border: 1px solid #f472b6;
+  background: var(--accent);
+  border: 2px solid var(--border);
   color: #fff;
   padding: 10px 20px;
   font-size: 11px;
   cursor: pointer;
   width: 100%;
   margin-top: 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
 }
 
 .passkey-auth .primary-btn:hover {
-  background: linear-gradient(180deg, #f472b6 0%, #db2777 100%);
+  background: var(--accent-hover);
 }
 
 .passkey-auth .primary-btn:disabled {
@@ -217,7 +171,7 @@ audio::-webkit-media-controls-panel {
 .passkey-auth .text-btn {
   background: none;
   border: none;
-  color: var(--text-dim);
+  color: var(--fg-muted);
   font-size: 10px;
   cursor: pointer;
   padding: 4px 8px;
@@ -225,7 +179,7 @@ audio::-webkit-media-controls-panel {
 }
 
 .passkey-auth .text-btn:hover {
-  color: var(--text);
+  color: var(--fg);
 }
 
 .passkey-auth .text-btn.danger:hover {
@@ -235,7 +189,7 @@ audio::-webkit-media-controls-panel {
 .passkey-auth .link-btn {
   background: none;
   border: none;
-  color: var(--lcd-green);
+  color: var(--accent);
   font-size: 11px;
   cursor: pointer;
   padding: 4px 0;
@@ -245,27 +199,27 @@ audio::-webkit-media-controls-panel {
 .passkey-auth .linux-help {
   margin-top: 12px;
   padding: 12px;
-  background: #0d1117;
-  border: 1px solid #21262d;
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
 }
 
 .passkey-auth .linux-help a {
   display: block;
   margin-top: 8px;
-  color: var(--lcd-green);
+  color: var(--accent);
 }
 
 .passkey-auth .error {
-  color: #ef4444;
+  color: #dc2626;
   font-size: 11px;
   margin-top: 8px;
   padding: 8px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: #fef2f2;
+  border: 1px solid #fecaca;
 }
 
 .passkey-auth .status {
-  color: var(--lcd-green);
+  color: var(--accent);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -277,9 +231,3 @@ audio::-webkit-media-controls-panel {
   justify-content: space-between;
 }
 
-/* Resize handle styling for desktop */
-@media (min-width: 1024px) {
-  .panel::-webkit-resizer {
-    background: linear-gradient(135deg, transparent 60%, var(--border-light) 60%);
-  }
-}

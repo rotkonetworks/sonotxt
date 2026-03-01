@@ -5,7 +5,6 @@ import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js'
 import * as api from '../lib/api'
 import { ApiError } from '../lib/api'
 
-// Must match backend KEY_DERIVATION_SALT
 const KEY_DERIVATION_SALT = new TextEncoder().encode('sonotxt-key-derivation-v1')
 
 interface Props {
@@ -15,7 +14,6 @@ interface Props {
 
 type Mode = 'login' | 'register' | 'magic' | 'recover' | 'show-recovery-share'
 
-// 2-of-2 secret sharing using XOR
 function splitSecret(secret: Uint8Array): { serverShare: Uint8Array; userShare: Uint8Array } {
   const serverShare = randomBytes(secret.length)
   const userShare = new Uint8Array(secret.length)
@@ -33,7 +31,6 @@ function combineShares(serverShare: Uint8Array, userShare: Uint8Array): Uint8Arr
   return secret
 }
 
-// Encode bytes as words for easier backup (simplified BIP39-like)
 const WORDLIST = [
   'abandon', 'ability', 'able', 'about', 'above', 'absent', 'absorb', 'abstract',
   'absurd', 'abuse', 'access', 'accident', 'account', 'accuse', 'achieve', 'acid',
@@ -122,12 +119,11 @@ export default function AuthModal(props: Props) {
     }
   }
 
-  // Reserved for future use with hardware wallet seeds
   async function _deriveKeypairFromSeed(seed: Uint8Array) {
     const publicKey = await getPublicKeyAsync(seed)
     return { privateKey: seed, publicKey }
   }
-  void _deriveKeypairFromSeed // suppress unused warning
+  void _deriveKeypairFromSeed
 
   async function signChallengeLocally(nick: string, p: string, challenge: string) {
     const { privateKey } = await deriveKeypair(nick, p)
@@ -182,7 +178,6 @@ export default function AuthModal(props: Props) {
     const { publicKey, seed } = await deriveKeypair(nick, p)
     const publicKeyHex = bytesToHex(publicKey)
 
-    // If recovery email provided, create Shamir shares
     let serverShareHex: string | undefined
     if (recEmail) {
       const { serverShare, userShare } = splitSecret(seed)
@@ -197,7 +192,6 @@ export default function AuthModal(props: Props) {
       recovery_share: serverShareHex,
     })
 
-    // If we have recovery share, show it to user before logging in
     if (recEmail && recoveryShare()) {
       setMode('show-recovery-share')
       return
@@ -226,7 +220,6 @@ export default function AuthModal(props: Props) {
 
     const data = await api.requestMagicLink(e)
 
-    // Response should include server share for Shamir recovery
     if (data.server_share) {
       setServerShareHex(data.server_share)
       setMessage('Check your email! Enter your recovery words below to complete recovery.')
@@ -244,7 +237,6 @@ export default function AuthModal(props: Props) {
     if (!serverHex) throw new Error('Server share not received. Request magic link first.')
     if (!nick) throw new Error('Enter your nickname')
 
-    // Convert shares back to bytes
     const userShare = wordsToBytes(userWords)
     const serverShare = hexToBytes(serverHex)
 
@@ -252,10 +244,7 @@ export default function AuthModal(props: Props) {
       throw new Error('Invalid recovery words length')
     }
 
-    // Reconstruct the seed
     const seed = combineShares(serverShare, userShare)
-
-    // Get challenge and sign with reconstructed seed
     const { challenge } = await api.getChallenge(nick)
     const signature = await signChallengeWithSeed(seed, challenge)
 
@@ -281,61 +270,40 @@ export default function AuthModal(props: Props) {
     background: 'transparent',
     border: 'none',
     padding: '8px',
-    color: '#ec4899',
-    'font-family': 'monospace',
+    color: 'var(--fg)',
+    'font-family': "'IBM Plex Mono', monospace",
     'font-size': '14px',
     outline: 'none',
   }
 
   const inputContainerStyle = {
-    background: '#0d1117',
-    border: '1px solid',
-    'border-color': '#010409 #21262d #21262d #010409',
-    'box-shadow': 'inset 1px 1px 3px rgba(0,0,0,0.5)',
+    background: 'var(--surface)',
+    border: '1px solid var(--border-soft)',
   }
 
   const labelStyle = {
     display: 'block',
     'font-size': '10px',
-    color: '#8b949e',
+    color: 'var(--fg-muted)',
     'margin-bottom': '4px',
     'text-transform': 'uppercase',
+    'font-family': "'Space Grotesk', sans-serif",
   }
 
   return (
     <div
       class="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: 'rgba(0,0,0,0.9)' }}
+      style={{ background: 'rgba(0,0,0,0.5)' }}
       onClick={props.onClose}
     >
       <div
-        style={{
-          width: '100%',
-          'max-width': '320px',
-          background: 'linear-gradient(180deg, #21262d 0%, #161b22 100%)',
-          border: '1px solid',
-          'border-color': '#30363d #0d1117 #0d1117 #30363d',
-          'box-shadow': 'inset 1px 1px 0 rgba(255,255,255,0.03), inset -1px -1px 0 rgba(0,0,0,0.3), 0 8px 32px rgba(0,0,0,0.4)',
-        }}
+        class="w-full max-w-xs bg-surface border-2 border-edge shadow-sharp"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Title bar */}
-        <div
-          style={{
-            background: 'linear-gradient(180deg, #21262d 0%, #161b22 100%)',
-            'border-bottom': '1px solid #0d1117',
-            padding: '6px 10px',
-            display: 'flex',
-            'align-items': 'center',
-            gap: '8px',
-            'font-size': '11px',
-            'font-weight': '600',
-            'text-transform': 'uppercase',
-            'letter-spacing': '1px',
-          }}
-        >
-          <span class="i-mdi-account-key" style={{ width: '16px', height: '16px', color: '#ec4899' }} />
-          <span style={{ color: '#fff', flex: '1' }}>
+        <div class="titlebar">
+          <span class="i-mdi-account-key w-4 h-4 text-accent" />
+          <span class="text-accent-strong flex-1 font-heading">
             {mode() === 'register' ? 'Register' :
              mode() === 'magic' ? 'Recovery Email' :
              mode() === 'recover' ? 'Recover Account' :
@@ -344,16 +312,7 @@ export default function AuthModal(props: Props) {
           </span>
           <button
             onClick={props.onClose}
-            style={{
-              background: 'linear-gradient(180deg, #30363d 0%, #21262d 50%, #21262d 50%, #161b22 100%)',
-              border: '1px solid',
-              'border-color': '#484f58 #0d1117 #0d1117 #484f58',
-              color: '#c9d1d9',
-              cursor: 'pointer',
-              'font-size': '11px',
-              'font-weight': '600',
-              padding: '2px 8px',
-            }}
+            class="btn-win px-2 py-0.5 text-xs"
           >
             X
           </button>
@@ -362,45 +321,19 @@ export default function AuthModal(props: Props) {
         {/* Show recovery share after registration */}
         <Show when={mode() === 'show-recovery-share'}>
           <div style={{ padding: '12px' }}>
-            <div style={{
-              background: '#1c1917',
-              border: '1px solid #78350f',
-              padding: '12px',
-              'margin-bottom': '12px',
-            }}>
-              <p style={{ 'font-size': '11px', color: '#fbbf24', 'margin-bottom': '8px', 'font-weight': '600' }}>
+            <div class="bg-amber-50 border-2 border-amber-700 p-3 mb-3">
+              <p class="text-xs text-amber-800 font-heading font-semibold mb-2">
                 SAVE THESE RECOVERY WORDS
               </p>
-              <p style={{ 'font-size': '10px', color: '#d4d4d4', 'margin-bottom': '12px' }}>
+              <p class="text-[10px] text-fg-muted mb-3">
                 Write these down and store them safely. You'll need them + your email to recover your account if you forget your pin.
               </p>
-              <div style={{
-                background: '#0d1117',
-                border: '1px solid #374151',
-                padding: '12px',
-                'font-family': 'monospace',
-                'font-size': '12px',
-                color: '#10b981',
-                'word-break': 'break-word',
-                'line-height': '1.6',
-              }}>
+              <div class="bg-page border border-edge-soft p-3 font-mono text-xs text-emerald-700" style={{ 'word-break': 'break-word', 'line-height': '1.6' }}>
                 {recoveryShare()}
               </div>
               <button
                 onClick={copyRecoveryShare}
-                style={{
-                  width: '100%',
-                  'margin-top': '8px',
-                  background: copiedShare() ? '#065f46' : 'linear-gradient(180deg, #30363d 0%, #21262d 100%)',
-                  border: '1px solid',
-                  'border-color': '#484f58 #0d1117 #0d1117 #484f58',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  'font-size': '11px',
-                  'font-weight': '600',
-                  padding: '8px 12px',
-                  'text-transform': 'uppercase',
-                }}
+                class={`btn-win w-full mt-2 ${copiedShare() ? 'bg-emerald-100 text-emerald-800' : ''}`}
               >
                 {copiedShare() ? 'COPIED!' : 'COPY TO CLIPBOARD'}
               </button>
@@ -408,19 +341,7 @@ export default function AuthModal(props: Props) {
             <button
               onClick={continueAfterRecoveryShare}
               disabled={loading()}
-              style={{
-                width: '100%',
-                background: 'linear-gradient(180deg, #ec4899 0%, #be185d 50%, #be185d 50%, #db2777 100%)',
-                border: '1px solid',
-                'border-color': '#f472b6 #831843 #831843 #f472b6',
-                color: '#fff',
-                cursor: 'pointer',
-                'font-size': '11px',
-                'font-weight': '600',
-                padding: '10px 12px',
-                'text-transform': 'uppercase',
-                'text-shadow': '0 1px 2px rgba(0,0,0,0.3)',
-              }}
+              class="btn-win primary w-full py-2"
             >
               {loading() ? 'LOGGING IN...' : 'I SAVED THEM - CONTINUE'}
             </button>
@@ -443,13 +364,13 @@ export default function AuthModal(props: Props) {
                   />
                 </div>
                 <Show when={mode() === 'register'}>
-                  <p style={{ 'font-size': '9px', color: '#8b949e', 'margin-top': '4px' }}>3-20 chars, letters/numbers/_/-</p>
+                  <p class="text-[9px] text-fg-muted mt-1">3-20 chars, letters/numbers/_/-</p>
                 </Show>
               </div>
 
               <div style={{ 'margin-bottom': '12px' }}>
                 <label style={labelStyle}>
-                  Pin <span style={{ color: '#666' }}>(local only)</span>
+                  Pin <span class="text-fg-faint">(local only)</span>
                 </label>
                 <div style={inputContainerStyle}>
                   <input
@@ -461,14 +382,14 @@ export default function AuthModal(props: Props) {
                   />
                 </div>
                 <Show when={mode() === 'register'}>
-                  <p style={{ 'font-size': '9px', color: '#8b949e', 'margin-top': '4px' }}>Used to derive keys. Cannot be recovered without backup.</p>
+                  <p class="text-[9px] text-fg-muted mt-1">Used to derive keys. Cannot be recovered without backup.</p>
                 </Show>
               </div>
 
               <Show when={mode() === 'register'}>
                 <div style={{ 'margin-bottom': '12px' }}>
                   <label style={labelStyle}>
-                    Recovery Email <span style={{ color: '#666' }}>(recommended)</span>
+                    Recovery Email <span class="text-fg-faint">(recommended)</span>
                   </label>
                   <div style={inputContainerStyle}>
                     <input
@@ -479,7 +400,7 @@ export default function AuthModal(props: Props) {
                       onInput={(e) => setRecoveryEmail(e.currentTarget.value)}
                     />
                   </div>
-                  <p style={{ 'font-size': '9px', color: '#8b949e', 'margin-top': '4px' }}>
+                  <p class="text-[9px] text-fg-muted mt-1">
                     Enables trustless recovery via Shamir secret sharing.
                   </p>
                 </div>
@@ -499,7 +420,7 @@ export default function AuthModal(props: Props) {
                     onInput={(e) => setEmail(e.currentTarget.value)}
                   />
                 </div>
-                <p style={{ 'font-size': '9px', color: '#8b949e', 'margin-top': '4px' }}>
+                <p class="text-[9px] text-fg-muted mt-1">
                   We'll send you the server's share of your recovery key.
                 </p>
               </div>
@@ -527,7 +448,7 @@ export default function AuthModal(props: Props) {
                       onInput={(e) => setUserShareInput(e.currentTarget.value)}
                     />
                   </div>
-                  <p style={{ 'font-size': '9px', color: '#8b949e', 'margin-top': '4px' }}>
+                  <p class="text-[9px] text-fg-muted mt-1">
                     Enter the recovery words you saved during registration.
                   </p>
                 </div>
@@ -535,36 +456,22 @@ export default function AuthModal(props: Props) {
             </Show>
 
             <Show when={error()}>
-              <p style={{ color: '#ff6b6b', 'font-size': '10px', 'margin-bottom': '8px' }}>{error()}</p>
+              <div class="bg-red-50 border border-red-200 p-2 mb-2">
+                <p class="text-red-700 text-[10px]">{error()}</p>
+              </div>
             </Show>
 
             <Show when={message()}>
-              <p style={{ color: '#10b981', 'font-size': '10px', 'margin-bottom': '8px' }}>{message()}</p>
+              <div class="bg-emerald-50 border border-emerald-200 p-2 mb-2">
+                <p class="text-emerald-700 text-[10px]">{message()}</p>
+              </div>
             </Show>
 
             <button
               type="submit"
               disabled={loading()}
-              style={{
-                width: '100%',
-                background: 'linear-gradient(180deg, #ec4899 0%, #be185d 50%, #be185d 50%, #db2777 100%)',
-                border: '1px solid',
-                'border-color': '#f472b6 #831843 #831843 #f472b6',
-                color: '#fff',
-                cursor: loading() ? 'wait' : 'pointer',
-                'font-size': '11px',
-                'font-weight': '600',
-                padding: '8px 12px',
-                'text-transform': 'uppercase',
-                'letter-spacing': '0.5px',
-                'margin-bottom': '12px',
-                display: 'flex',
-                'align-items': 'center',
-                'justify-content': 'center',
-                gap: '8px',
-                'text-shadow': '0 1px 2px rgba(0,0,0,0.3)',
-                opacity: loading() ? '0.7' : '1',
-              }}
+              class="btn-win primary w-full py-2 mb-3 flex items-center justify-center gap-2"
+              style={{ opacity: loading() ? '0.7' : '1' }}
             >
               {loading() && <span class="animate-spin">*</span>}
               {derivingKeys()
@@ -579,26 +486,18 @@ export default function AuthModal(props: Props) {
             </button>
           </form>
 
-          <div
-            style={{
-              'border-top': '1px solid #0d1117',
-              padding: '8px 12px',
-              'text-align': 'center',
-              'font-size': '10px',
-              color: '#8b949e',
-            }}
-          >
+          <div class="border-t border-edge-soft px-3 py-2 text-center text-[10px] text-fg-muted">
             <Show when={mode() === 'login'}>
               <button
                 onClick={() => setMode('register')}
-                style={{ background: 'none', border: 'none', color: '#ec4899', cursor: 'pointer' }}
+                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
               >
                 New? Register
               </button>
-              <span style={{ margin: '0 8px' }}>|</span>
+              <span class="mx-2">|</span>
               <button
                 onClick={() => setMode('magic')}
-                style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer' }}
+                class="bg-transparent border-none text-fg-muted cursor-pointer text-[10px]"
               >
                 Forgot pin?
               </button>
@@ -607,7 +506,7 @@ export default function AuthModal(props: Props) {
             <Show when={mode() === 'register'}>
               <button
                 onClick={() => setMode('login')}
-                style={{ background: 'none', border: 'none', color: '#ec4899', cursor: 'pointer' }}
+                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
               >
                 Have account? Login
               </button>
@@ -616,7 +515,7 @@ export default function AuthModal(props: Props) {
             <Show when={mode() === 'magic'}>
               <button
                 onClick={() => { setMode('login'); setServerShareHex(''); setMessage('') }}
-                style={{ background: 'none', border: 'none', color: '#ec4899', cursor: 'pointer' }}
+                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
               >
                 Back to login
               </button>

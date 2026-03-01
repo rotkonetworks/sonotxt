@@ -2,6 +2,7 @@
 import { render } from 'solid-js/web'
 import '@unocss/reset/tailwind.css'
 import 'virtual:uno.css'
+import './index.css'
 import App from './App'
 import { StoreProvider } from './lib/store'
 import { AppErrorBoundary } from './components/ErrorBoundary'

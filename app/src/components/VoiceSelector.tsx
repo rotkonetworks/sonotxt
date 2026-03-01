@@ -21,19 +21,16 @@ export function VoiceSelector(props: VoiceSelectorProps) {
 
   let audioRef: HTMLAudioElement | undefined
 
-  // Derived: featured voices
   const featuredVoices = createMemo(() => {
     const all = Object.values(props.voices).flat()
     return all.filter(v => props.featured.includes(v.id))
   })
 
-  // Derived: selected voice name
   const selectedName = createMemo(() => {
     const all = Object.values(props.voices).flat()
     return all.find(v => v.id === props.selected)?.name ?? props.selected
   })
 
-  // Cleanup audio on unmount
   onCleanup(() => {
     if (audioRef) {
       audioRef.pause()
@@ -56,13 +53,8 @@ export function VoiceSelector(props: VoiceSelectorProps) {
     setPreviewing(null)
   }
 
-  const handleSelect = (voiceId: string) => {
-    props.onSelect(voiceId)
-  }
-
   return (
     <div class="voice-selector">
-      {/* Hidden preview audio */}
       <audio
         ref={audioRef}
         onEnded={() => setPreviewing(null)}
@@ -71,8 +63,8 @@ export function VoiceSelector(props: VoiceSelectorProps) {
 
       {/* Header */}
       <div class="flex justify-between items-center mb-2">
-        <div class="text-[10px] sm:text-xs text-text-dim uppercase tracking-wider">
-          Voice: <span class="text-lcd-green">{selectedName()}</span>
+        <div class="text-[10px] sm:text-xs text-fg-muted uppercase tracking-wider font-heading">
+          Voice: <span class="text-accent">{selectedName()}</span>
         </div>
         <button
           class="btn-win text-[10px]"
@@ -90,7 +82,7 @@ export function VoiceSelector(props: VoiceSelectorProps) {
               voice={v}
               selected={props.selected === v.id}
               previewing={previewing() === v.id}
-              onSelect={() => handleSelect(v.id)}
+              onSelect={() => props.onSelect(v.id)}
               onPreview={() => preview(v.id)}
               onStopPreview={stopPreview}
             />
@@ -100,11 +92,11 @@ export function VoiceSelector(props: VoiceSelectorProps) {
 
       {/* Expanded: all voices by category */}
       <Show when={expanded()}>
-        <div class="mt-3 pt-3 border-t border-border-dark space-y-3">
+        <div class="mt-3 pt-3 border-t border-edge-soft space-y-3">
           <For each={Object.entries(props.voices)}>
             {([category, voices]) => (
               <div>
-                <div class="text-[9px] sm:text-[10px] text-text-dim mb-1 uppercase">
+                <div class="text-[9px] sm:text-[10px] text-fg-muted mb-1 uppercase font-heading">
                   {category}
                 </div>
                 <div class="flex flex-wrap gap-1">
@@ -114,7 +106,7 @@ export function VoiceSelector(props: VoiceSelectorProps) {
                         voice={v}
                         selected={props.selected === v.id}
                         previewing={previewing() === v.id}
-                        onSelect={() => handleSelect(v.id)}
+                        onSelect={() => props.onSelect(v.id)}
                         onPreview={() => preview(v.id)}
                         onStopPreview={stopPreview}
                       />
@@ -130,7 +122,6 @@ export function VoiceSelector(props: VoiceSelectorProps) {
   )
 }
 
-// Extracted button component for better performance
 interface VoiceButtonProps {
   voice: Voice
   selected: boolean
@@ -141,26 +132,32 @@ interface VoiceButtonProps {
 }
 
 function VoiceButton(props: VoiceButtonProps) {
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined
+
+  const handlePointerEnter = () => {
+    hoverTimer = setTimeout(() => props.onPreview(), 150)
+  }
+  const handlePointerLeave = () => {
+    clearTimeout(hoverTimer)
+    props.onStopPreview()
+  }
+  onCleanup(() => clearTimeout(hoverTimer))
+
   return (
-    <div class="flex items-center gap-0.5">
-      <button
-        class={`btn-win text-[10px] sm:text-xs ${props.selected ? 'primary' : ''}`}
-        onClick={props.onSelect}
-      >
-        {props.voice.name}
-      </button>
-      <button
-        class={`btn-win p-1 ${props.previewing ? 'primary' : ''}`}
-        onClick={() => props.previewing ? props.onStopPreview() : props.onPreview()}
-        onMouseEnter={props.onPreview}
-        onMouseLeave={props.onStopPreview}
-        title={`Preview ${props.voice.name}`}
-      >
-        <span
-          class={`w-3 h-3 ${props.previewing ? 'i-mdi-volume-high animate-pulse' : 'i-mdi-play'}`}
-        />
-      </button>
-    </div>
+    <button
+      class={`btn-win text-[10px] sm:text-xs inline-flex items-center gap-1 ${
+        props.selected ? 'primary' : ''
+      } ${props.previewing ? 'bg-accent-soft' : ''}`}
+      onClick={() => { props.onSelect(); props.onPreview() }}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+    >
+      <Show when={props.previewing}>
+        <span class="i-mdi-volume-high w-3 h-3 animate-pulse" />
+      </Show>
+      {props.voice.name}
+      <span class="text-fg-faint text-[9px]">{props.voice.accent}</span>
+    </button>
   )
 }
 
