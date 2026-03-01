@@ -24,6 +24,3 @@ render(
 // Hide shell, show app
 root.style.display = 'block'
 shell?.remove()
-document.body.style.display = ''
-document.body.style.alignItems = ''
-document.body.style.justifyContent = ''
