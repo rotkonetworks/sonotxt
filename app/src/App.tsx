@@ -368,7 +368,7 @@ export default function App() {
             />
           </div>
         </div>
-        <div class="flex-1 overflow-y-auto max-h-28 sm:max-h-36 lg:max-h-none">
+        <div class="flex-1 overflow-y-auto max-h-28 sm:max-h-36 2xl:max-h-none">
           <For each={filteredHistory().slice(0, 10)}>{item => {
             const isSelected = () => audioUrl() === item.url
             return (
@@ -454,12 +454,12 @@ export default function App() {
       </header>
 
       {/* Body */}
-      <div class="flex-1 flex flex-col lg:flex-row">
+      <div class="flex-1 flex flex-col 2xl:flex-row">
         {/* Main content area */}
-        <main class="flex-1 flex flex-col items-center p-2 sm:p-4 lg:p-4">
+        <main class="flex-1 flex flex-col items-center lg:items-stretch p-2 sm:p-4 lg:p-4">
           {/* Player card — only when audio exists or loading */}
           <Show when={audioUrl() || loading()}>
-            <div class="w-full max-w-[95vw] sm:max-w-xl lg:max-w-3xl mb-3 sm:mb-4">
+            <div class="w-full mb-3 sm:mb-4">
               <div class="panel-inset p-2 sm:p-3">
                 <div class="flex items-center gap-2 mb-2 text-[10px] sm:text-xs font-heading">
                   {statusDisplay()}
@@ -487,10 +487,10 @@ export default function App() {
           </Show>
 
           {/* Input card */}
-          <div class="w-full max-w-[95vw] sm:max-w-xl lg:max-w-none lg:flex-1 lg:flex lg:flex-col">
+          <div class="w-full lg:flex-1 lg:flex lg:flex-col">
             <div class="panel-inset lg:flex-1 lg:flex lg:flex-col">
               {/* Mobile-only: voice selector inline */}
-              <div class="lg:hidden p-2 border-b border-edge-soft">
+              <div class="2xl:hidden p-2 border-b border-edge-soft">
                 <VoiceSelector
                   voices={transformedVoices()}
                   featured={['en-Mike_man', 'af_bella', 'am_adam', 'bf_emma']}
@@ -503,14 +503,14 @@ export default function App() {
               {/* Mode tabs */}
               <div class="flex gap-1 p-2 border-b border-edge-soft">
                 <button
-                  class={`btn-win text-[10px] sm:text-xs flex-1 lg:flex-none lg:px-4 ${mode() === 'text' ? 'primary' : ''}`}
+                  class={`btn-win text-[10px] sm:text-xs flex-1 2xl:flex-none lg:px-4 2xl:px-4 ${mode() === 'text' ? 'primary' : ''}`}
                   onClick={() => setMode('text')}
                 >
                   <span class="i-mdi-text w-3 h-3 mr-1" />
                   TEXT
                 </button>
                 <button
-                  class={`btn-win text-[10px] sm:text-xs flex-1 lg:flex-none lg:px-4 ${mode() === 'url' ? 'primary' : ''}`}
+                  class={`btn-win text-[10px] sm:text-xs flex-1 2xl:flex-none lg:px-4 2xl:px-4 ${mode() === 'url' ? 'primary' : ''}`}
                   onClick={() => setMode('url')}
                 >
                   <span class="i-mdi-web w-3 h-3 mr-1" />
@@ -584,7 +584,7 @@ export default function App() {
 
           {/* Free tier limit error */}
           <Show when={showLimitError()}>
-            <div class="w-full max-w-[95vw] sm:max-w-xl lg:max-w-3xl mt-3">
+            <div class="w-full mt-3">
               <div class="bg-surface border-2 border-edge p-3">
                 <div class="flex items-start gap-3">
                   <span class="i-mdi-alert-circle w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -622,14 +622,14 @@ export default function App() {
           </Show>
 
           {/* Mobile-only: history below input */}
-          <div class="lg:hidden w-full max-w-[95vw] sm:max-w-xl mt-3">
+          <div class="2xl:hidden w-full mt-3">
             <div class="panel-inset p-2">
               {historySection()}
             </div>
           </div>
 
           {/* Mobile-only: footer */}
-          <div class="lg:hidden w-full max-w-[95vw] sm:max-w-xl mt-3 text-center">
+          <div class="2xl:hidden w-full mt-3 text-center">
             <div class="text-[10px] text-fg-muted font-heading">
               {store.stats.generated} generated
               <span class="mx-1">·</span>
@@ -641,7 +641,7 @@ export default function App() {
         </main>
 
         {/* Right sidebar — lg+ only */}
-        <aside class="hidden lg:flex lg:flex-col lg:w-72 xl:w-80 border-l-2 border-edge bg-surface">
+        <aside class="hidden 2xl:flex 2xl:flex-col 2xl:w-72 3xl:w-80 border-l-2 border-edge bg-surface">
           <div class="p-3">
             <VoiceSelector
               voices={transformedVoices()}
