@@ -456,7 +456,7 @@ export default function App() {
       {/* Body */}
       <div class="flex-1 flex flex-col lg:flex-row">
         {/* Main content area */}
-        <main class="flex-1 flex flex-col items-center p-2 sm:p-4 lg:pt-12 lg:px-8">
+        <main class="flex-1 flex flex-col items-center p-2 sm:p-4 lg:p-4">
           {/* Player card — only when audio exists or loading */}
           <Show when={audioUrl() || loading()}>
             <div class="w-full max-w-[95vw] sm:max-w-xl lg:max-w-3xl mb-3 sm:mb-4">
@@ -487,8 +487,8 @@ export default function App() {
           </Show>
 
           {/* Input card */}
-          <div class="w-full max-w-[95vw] sm:max-w-xl lg:max-w-3xl">
-            <div class="panel-inset">
+          <div class="w-full max-w-[95vw] sm:max-w-xl lg:max-w-none lg:flex-1 lg:flex lg:flex-col">
+            <div class="panel-inset lg:flex-1 lg:flex lg:flex-col">
               {/* Mobile-only: voice selector inline */}
               <div class="lg:hidden p-2 border-b border-edge-soft">
                 <VoiceSelector
@@ -546,14 +546,14 @@ export default function App() {
               {/* Text input */}
               <Show when={mode() === 'text'}>
                 <div
-                  class={dragover() ? 'border-accent' : ''}
+                  class={`lg:flex-1 lg:flex lg:flex-col ${dragover() ? 'border-accent' : ''}`}
                   onDragOver={(e) => { e.preventDefault(); setDragover(true) }}
                   onDragLeave={() => setDragover(false)}
                   onDrop={handleDrop}
                 >
                   <textarea
                     ref={textareaRef}
-                    class="w-full min-h-24 sm:min-h-32 lg:min-h-60 p-2 sm:p-3 bg-transparent text-fg font-mono text-xs sm:text-sm resize-y outline-none placeholder:text-fg-faint"
+                    class="w-full min-h-24 sm:min-h-32 lg:flex-1 p-2 sm:p-3 bg-transparent text-fg font-mono text-xs sm:text-sm resize-y lg:resize-none outline-none placeholder:text-fg-faint"
                     placeholder="Paste or type text here..."
                     value={text()}
                     onInput={(e) => setText(e.currentTarget.value)}
