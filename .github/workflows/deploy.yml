@@ -47,38 +47,41 @@ jobs:
 
       - name: Deploy app
         run: |
-          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-app/
+          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-landing/
+          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-dashboard/
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
-          cd /tmp/sonotxt-app
 
-          # Stop old containers
+          # Deploy to sonotxt.com (port 8100)
           podman stop sonotxt-landing 2>/dev/null || true
           podman rm sonotxt-landing 2>/dev/null || true
-          podman stop sonotxt-dashboard 2>/dev/null || true
-          podman rm sonotxt-dashboard 2>/dev/null || true
-
-          sudo mkdir -p /srv/sonotxt/app
-          sudo cp ape /srv/sonotxt/app/ape
-          sudo cp redbean.com /srv/sonotxt/app/redbean.com
-          sudo chmod +x /srv/sonotxt/app/ape /srv/sonotxt/app/redbean.com
-
-          # sonotxt.com on port 8100
+          cd /tmp/sonotxt-landing
+          sudo mkdir -p /srv/sonotxt/landing
+          sudo mv ape /srv/sonotxt/landing/ape
+          sudo mv redbean.com /srv/sonotxt/landing/redbean.com
+          sudo chmod +x /srv/sonotxt/landing/ape /srv/sonotxt/landing/redbean.com
           podman run -d \
             --name sonotxt-landing \
             --restart=always \
             -p 127.0.0.1:8100:80 \
-            -v /srv/sonotxt/app/redbean.com:/redbean.com:ro \
-            -v /srv/sonotxt/app/ape:/usr/bin/ape:ro \
+            -v /srv/sonotxt/landing/redbean.com:/redbean.com:ro \
+            -v /srv/sonotxt/landing/ape:/usr/bin/ape:ro \
             alpine:latest /usr/bin/ape /redbean.com -vv -p 80
 
-          # app.sonotxt.com on port 8101
+          # Deploy to app.sonotxt.com (port 8101)
+          podman stop sonotxt-dashboard 2>/dev/null || true
+          podman rm sonotxt-dashboard 2>/dev/null || true
+          cd /tmp/sonotxt-dashboard
+          sudo mkdir -p /srv/sonotxt/dashboard
+          sudo mv ape /srv/sonotxt/dashboard/ape
+          sudo mv redbean.com /srv/sonotxt/dashboard/redbean.com
+          sudo chmod +x /srv/sonotxt/dashboard/ape /srv/sonotxt/dashboard/redbean.com
           podman run -d \
             --name sonotxt-dashboard \
             --restart=always \
             -p 127.0.0.1:8101:80 \
-            -v /srv/sonotxt/app/redbean.com:/redbean.com:ro \
-            -v /srv/sonotxt/app/ape:/usr/bin/ape:ro \
+            -v /srv/sonotxt/dashboard/redbean.com:/redbean.com:ro \
+            -v /srv/sonotxt/dashboard/ape:/usr/bin/ape:ro \
             alpine:latest /usr/bin/ape /redbean.com -vv -p 80
 
           sleep 2
