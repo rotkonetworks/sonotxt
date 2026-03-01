@@ -414,9 +414,10 @@ export default function App() {
   )
 
   return (
-    <div class="min-h-screen flex flex-col">
-      {/* Header */}
-      <header class="flex items-center px-3 sm:px-4 py-2 border-b-2 border-edge bg-surface font-heading text-xs font-semibold uppercase tracking-wider">
+    <div class="min-h-screen flex justify-center p-2 sm:p-4 lg:p-6">
+     <div class="panel w-full max-w-6xl flex flex-col">
+      {/* Titlebar */}
+      <header class="titlebar">
         <div class="flex items-center gap-2">
           <div class="i-mdi-waveform text-accent-strong w-4 h-4" />
           <span class="text-accent-strong font-bold">SONOTXT</span>
@@ -432,11 +433,12 @@ export default function App() {
 
         <div class="flex-1" />
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
           <Show when={store.user} fallback={
             <>
               <span class="text-xs text-accent font-mono">{store.freeRemaining}</span>
               <span class="text-[10px] text-fg-muted hidden sm:inline">remaining</span>
+              <span class="text-fg-faint">|</span>
               <button
                 onClick={() => setShowAuth(true)}
                 class="text-fg-muted hover:text-accent font-heading text-[10px] sm:text-xs transition-colors"
@@ -456,7 +458,7 @@ export default function App() {
       {/* Body */}
       <div class="flex-1 flex flex-col 2xl:flex-row">
         {/* Main content area */}
-        <main class="flex-1 flex flex-col items-center lg:items-stretch p-2 sm:p-4 lg:p-4">
+        <main class="flex-1 flex flex-col p-2 sm:p-4 lg:p-6">
           {/* Player card — only when audio exists or loading */}
           <Show when={audioUrl() || loading()}>
             <div class="w-full mb-3 sm:mb-4">
@@ -698,6 +700,7 @@ export default function App() {
       </Show>
 
       <ToastContainer />
+     </div>
     </div>
   )
 }
