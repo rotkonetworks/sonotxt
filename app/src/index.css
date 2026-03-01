@@ -28,11 +28,17 @@ html {
 
 body {
   margin: 0;
+  display: block;
   background: var(--bg);
   color: var(--fg);
   font-family: 'IBM Plex Serif', serif;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
 }
 
 /* panel — sharp shadow blog style */
