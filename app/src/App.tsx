@@ -19,6 +19,7 @@ const fetchVoicesData = async (): Promise<VoicesResponse> => {
 }
 
 const AuthModal = lazy(() => import('./components/AuthModal'))
+const WalletModal = lazy(() => import('./components/WalletModal'))
 const ProfilePage = lazy(() => import('./components/ProfilePage'))
 const DocsPage = lazy(() => import('./components/DocsPage'))
 
@@ -77,8 +78,10 @@ export default function App() {
   const [showLimitError, setShowLimitError] = createSignal(false)
   const [historyFilter, setHistoryFilter] = createSignal('')
   const [showAuth, setShowAuth] = createSignal(false)
+  const [showWallet, setShowWallet] = createSignal(false)
   const [showProfile, setShowProfile] = createSignal(false)
   const [showDocs, setShowDocs] = createSignal(false)
+  const [showLoginMenu, setShowLoginMenu] = createSignal(false)
 
   let textareaRef: HTMLTextAreaElement | undefined
 
@@ -93,6 +96,11 @@ export default function App() {
   onMount(() => {
     const savedToken = localStorage.getItem('sonotxt_token')
     if (savedToken) checkSession(savedToken)
+
+    // fetch free balance for all users
+    api.getFreeBalance(savedToken).then(data => {
+      actions.setFreeRemaining(data.remaining)
+    }).catch(() => {})
 
     const handleKeydown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
@@ -133,7 +141,7 @@ export default function App() {
     try {
       const data = await api.checkSession(tok)
       actions.login(
-        { id: data.user_id, nickname: data.nickname, email: data.email, balance: data.balance },
+        { id: data.user_id, nickname: data.nickname, email: data.email, wallet_address: data.wallet_address, balance: data.balance },
         tok
       )
     } catch {
@@ -310,7 +318,9 @@ export default function App() {
   function onLogin(u: User, tok: string) {
     actions.login(u, tok)
     setShowAuth(false)
-    showToast(`Welcome, ${u.nickname || u.email}!`, 'success')
+    setShowWallet(false)
+    const name = u.nickname || u.email || (u.wallet_address ? u.wallet_address.slice(0, 8) + '...' : 'anon')
+    showToast(`Welcome, ${name}!`, 'success')
   }
 
   function logout() {
@@ -436,15 +446,36 @@ export default function App() {
         <div class="flex items-center gap-3">
           <Show when={store.user} fallback={
             <>
-              <span class="text-xs text-accent font-mono">{store.freeRemaining}</span>
-              <span class="text-[10px] text-fg-muted hidden sm:inline">remaining</span>
+              <span class="text-xs text-accent font-mono">{store.freeRemaining} free</span>
               <span class="text-fg-faint">|</span>
-              <button
-                onClick={() => setShowAuth(true)}
-                class="text-fg-muted hover:text-accent font-heading text-[10px] sm:text-xs transition-colors"
-              >
-                LOGIN
-              </button>
+              <div class="relative">
+                <button
+                  onClick={() => setShowLoginMenu(!showLoginMenu())}
+                  class="text-fg-muted hover:text-accent font-heading text-[10px] sm:text-xs transition-colors flex items-center gap-0.5"
+                >
+                  LOGIN
+                  <span class={`i-mdi-chevron-down w-2.5 h-2.5 transition-transform ${showLoginMenu() ? 'rotate-180' : ''}`} />
+                </button>
+                <Show when={showLoginMenu()}>
+                  <div class="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-surface border-2 border-edge shadow-sharp">
+                    <button
+                      class="w-full px-3 py-2 text-left text-xs text-fg hover:bg-page flex items-center gap-2"
+                      onClick={() => { setShowLoginMenu(false); setShowAuth(true) }}
+                    >
+                      <span class="i-mdi-key w-4 h-4 text-fg-muted" />
+                      Nickname + PIN
+                    </button>
+                    <button
+                      class="w-full px-3 py-2 text-left text-xs text-fg hover:bg-page flex items-center gap-2"
+                      onClick={() => { setShowLoginMenu(false); setShowWallet(true) }}
+                    >
+                      <span class="i-mdi-wallet w-4 h-4 text-fg-muted" />
+                      Connect Wallet
+                    </button>
+                  </div>
+                  <div class="fixed inset-0 z-40" onClick={() => setShowLoginMenu(false)} />
+                </Show>
+              </div>
             </>
           }>
             <ProfileDropdown
@@ -492,7 +523,7 @@ export default function App() {
           <div class="w-full lg:flex-1 lg:flex lg:flex-col">
             <div class="panel-inset lg:flex-1 lg:flex lg:flex-col">
               {/* Mobile-only: voice selector inline */}
-              <div class="2xl:hidden p-2 border-b border-edge-soft">
+              <div class="2xl:hidden p-2 border-b border-edge-soft" data-voice-selector>
                 <VoiceSelector
                   voices={transformedVoices()}
                   featured={['en-Mike_man', 'af_bella', 'am_adam', 'bf_emma']}
@@ -563,11 +594,25 @@ export default function App() {
                 </div>
               </Show>
 
-              {/* Footer: char count + generate */}
+              {/* Footer: char count + voice chip + generate */}
               <div class="flex justify-between items-center px-2 sm:px-3 py-2 border-t border-edge-soft bg-surface">
                 <span class={`text-[10px] sm:text-xs font-mono ${charCount() > 1000 ? 'text-red-600' : charCount() > 800 ? 'text-amber-600' : 'text-fg-muted'}`}>
                   {charCount().toLocaleString()} chars
                 </span>
+                <button
+                  class="hidden sm:flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-fg-muted hover:text-accent font-heading transition-colors"
+                  onClick={() => {
+                    const el = document.querySelector('[data-voice-selector]')
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  }}
+                  title="Selected voice"
+                >
+                  <span class="i-mdi-account-voice w-3 h-3" />
+                  {(() => {
+                    const v = allVoices().find(v => v.id === voice())
+                    return v ? v.name : voice()
+                  })()}
+                </button>
                 <button
                   class="btn-win primary flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs"
                   disabled={loading() || !text().trim()}
@@ -644,7 +689,7 @@ export default function App() {
 
         {/* Right sidebar — lg+ only */}
         <aside class="hidden 2xl:flex 2xl:flex-col 2xl:w-72 3xl:w-80 border-l-2 border-edge bg-surface">
-          <div class="p-3">
+          <div class="p-3" data-voice-selector>
             <VoiceSelector
               voices={transformedVoices()}
               featured={['en-Mike_man', 'af_bella', 'am_adam', 'bf_emma']}
@@ -676,6 +721,16 @@ export default function App() {
           </div>
         }>
           <AuthModal onClose={() => setShowAuth(false)} onLogin={onLogin} />
+        </Suspense>
+      </Show>
+
+      <Show when={showWallet()}>
+        <Suspense fallback={
+          <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="text-accent animate-pulse font-heading">LOADING...</div>
+          </div>
+        }>
+          <WalletModal onClose={() => setShowWallet(false)} onLogin={onLogin} />
         </Suspense>
       </Show>
 

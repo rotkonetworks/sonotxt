@@ -20,8 +20,16 @@ export default function ProfileDropdown(props: Props) {
 
   const displayName = () => {
     if (!store.user) return null
-    const name = store.user.nickname || store.user.email?.split('@')[0] || 'anon'
-    return name.length > 12 ? name.slice(0, 10) + '..' : name
+    if (store.user.nickname) {
+      const n = store.user.nickname
+      return n.length > 12 ? n.slice(0, 10) + '..' : n
+    }
+    if (store.user.email) return store.user.email.split('@')[0]
+    if (store.user.wallet_address) {
+      const a = store.user.wallet_address
+      return a.slice(0, 4) + '..' + a.slice(-4)
+    }
+    return 'anon'
   }
 
   return (
@@ -43,7 +51,7 @@ export default function ProfileDropdown(props: Props) {
           {/* User info header */}
           <div class="px-3 py-2 border-b border-edge-soft">
             <div class="text-xs text-fg font-medium truncate">
-              {store.user?.nickname || store.user?.email || 'Anonymous'}
+              {store.user?.nickname || store.user?.email || store.user?.wallet_address || 'Anonymous'}
             </div>
             <Show when={store.user?.email && store.user?.nickname}>
               <div class="text-[10px] text-fg-muted truncate">{store.user?.email}</div>
@@ -55,6 +63,10 @@ export default function ProfileDropdown(props: Props) {
             <div class="flex justify-between items-center">
               <span class="text-[10px] text-fg-muted uppercase">Balance</span>
               <span class="text-sm text-accent font-mono">${store.user?.balance.toFixed(2)}</span>
+            </div>
+            <div class="flex justify-between items-center mt-1">
+              <span class="text-[10px] text-fg-faint">Free chars</span>
+              <span class="text-[10px] text-fg-muted font-mono">{store.freeRemaining}</span>
             </div>
           </div>
 

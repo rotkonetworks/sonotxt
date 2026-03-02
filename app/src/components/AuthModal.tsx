@@ -494,6 +494,7 @@ export default function AuthModal(props: Props) {
               >
                 New? Register
               </button>
+              {/* TODO: enable when email service is wired up
               <span class="mx-2">|</span>
               <button
                 onClick={() => setMode('magic')}
@@ -501,6 +502,7 @@ export default function AuthModal(props: Props) {
               >
                 Forgot pin?
               </button>
+              */}
             </Show>
 
             <Show when={mode() === 'register'}>

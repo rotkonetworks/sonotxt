@@ -99,6 +99,7 @@ export interface User {
   id: string
   nickname?: string
   email?: string
+  wallet_address?: string
   balance: number
 }
 
@@ -106,6 +107,7 @@ export interface AuthResponse {
   user_id: string
   nickname?: string
   email?: string
+  wallet_address?: string
   balance: number
   token?: string
 }
@@ -175,6 +177,37 @@ export async function logout(token: string): Promise<void> {
     method: 'POST',
     body: JSON.stringify({ token }),
   })
+}
+
+// Wallet auth
+export async function walletChallenge(address: string): Promise<{ challenge: string }> {
+  return request('/api/auth/wallet/challenge', {
+    method: 'POST',
+    body: JSON.stringify({ address }),
+  })
+}
+
+export async function walletVerify(
+  address: string,
+  challenge: string,
+  signature: string
+): Promise<AuthResponse> {
+  return request('/api/auth/wallet/verify', {
+    method: 'POST',
+    body: JSON.stringify({ address, challenge, signature }),
+  })
+}
+
+// Free balance
+export interface FreeBalanceResponse {
+  remaining: number
+  limit: number
+}
+
+export async function getFreeBalance(token?: string | null): Promise<FreeBalanceResponse> {
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  return request('/api/free-balance', { headers })
 }
 
 // Download helper - returns URL for downloading audio via API proxy
