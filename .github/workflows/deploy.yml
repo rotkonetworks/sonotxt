@@ -31,7 +31,7 @@ jobs:
       - name: Download redbean
         run: |
           wget -q https://cosmo.zip/pub/cosmos/bin/ape-x86_64.elf -O ape
-          wget -q https://redbean.dev/redbean-2.2.com -O redbean.com
+          wget -q https://cosmo.zip/pub/cosmos/bin/redbean -O redbean.com
           chmod +x ape redbean.com
 
       - name: Pack app
@@ -199,7 +199,7 @@ jobs:
       - name: Download redbean
         run: |
           wget -q https://cosmo.zip/pub/cosmos/bin/ape-x86_64.elf -O ape
-          wget -q https://redbean.dev/redbean-2.2.com -O redbean.com
+          wget -q https://cosmo.zip/pub/cosmos/bin/redbean -O redbean.com
           chmod +x ape redbean.com
 
       - name: Pack CDN
