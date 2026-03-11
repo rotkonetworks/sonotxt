@@ -28,16 +28,6 @@ jobs:
           pnpm install
           pnpm build
 
-      - name: Download redbean
-        run: |
-          wget -q https://cosmo.zip/pub/cosmos/bin/ape-x86_64.elf -O ape
-          wget -q https://cosmo.zip/pub/cosmos/bin/redbean -O redbean.com
-          chmod +x ape redbean.com
-
-      - name: Pack app
-        run: |
-          cd app/dist && zip -r ../../redbean.com .
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -47,42 +37,36 @@ jobs:
 
       - name: Deploy app
         run: |
-          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-landing/
-          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-dashboard/
+          # Upload built files
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" app/dist/ deploy@www.rotko.net:/tmp/sonotxt-app/
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
 
-          # Deploy to sonotxt.com (port 8100)
+          # Deploy to sonotxt.com (port 8100) - landing redirect
+          mkdir -p /srv/sonotxt/landing
+          cp -r /tmp/sonotxt-app/* /srv/sonotxt/landing/
+
           podman stop sonotxt-landing 2>/dev/null || true
           podman rm sonotxt-landing 2>/dev/null || true
-          cd /tmp/sonotxt-landing
-          sudo mkdir -p /srv/sonotxt/landing
-          sudo mv ape /srv/sonotxt/landing/ape
-          sudo mv redbean.com /srv/sonotxt/landing/redbean.com
-          sudo chmod +x /srv/sonotxt/landing/ape /srv/sonotxt/landing/redbean.com
           podman run -d \
             --name sonotxt-landing \
             --restart=always \
             -p 127.0.0.1:8100:80 \
-            -v /srv/sonotxt/landing/redbean.com:/redbean.com:ro \
-            -v /srv/sonotxt/landing/ape:/usr/bin/ape:ro \
-            alpine:latest /usr/bin/ape /redbean.com -vv -p 80
+            -v /srv/sonotxt/landing:/usr/share/nginx/html:ro \
+            docker.io/library/nginx:alpine
 
           # Deploy to app.sonotxt.com (port 8101)
+          mkdir -p /srv/sonotxt/dashboard
+          cp -r /tmp/sonotxt-app/* /srv/sonotxt/dashboard/
+
           podman stop sonotxt-dashboard 2>/dev/null || true
           podman rm sonotxt-dashboard 2>/dev/null || true
-          cd /tmp/sonotxt-dashboard
-          sudo mkdir -p /srv/sonotxt/dashboard
-          sudo mv ape /srv/sonotxt/dashboard/ape
-          sudo mv redbean.com /srv/sonotxt/dashboard/redbean.com
-          sudo chmod +x /srv/sonotxt/dashboard/ape /srv/sonotxt/dashboard/redbean.com
           podman run -d \
             --name sonotxt-dashboard \
             --restart=always \
             -p 127.0.0.1:8101:80 \
-            -v /srv/sonotxt/dashboard/redbean.com:/redbean.com:ro \
-            -v /srv/sonotxt/dashboard/ape:/usr/bin/ape:ro \
-            alpine:latest /usr/bin/ape /redbean.com -vv -p 80
+            -v /srv/sonotxt/dashboard:/usr/share/nginx/html:ro \
+            docker.io/library/nginx:alpine
 
           sleep 2
           curl -sf http://127.0.0.1:8100/ > /dev/null && echo "sonotxt.com deploy OK"
@@ -196,16 +180,6 @@ jobs:
           mkdir -p cdn
           cp app/public/embed.js cdn/embed.js
 
-      - name: Download redbean
-        run: |
-          wget -q https://cosmo.zip/pub/cosmos/bin/ape-x86_64.elf -O ape
-          wget -q https://cosmo.zip/pub/cosmos/bin/redbean -O redbean.com
-          chmod +x ape redbean.com
-
-      - name: Pack CDN
-        run: |
-          cd cdn && zip -r ../redbean.com .
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -215,27 +189,23 @@ jobs:
 
       - name: Deploy CDN
         run: |
-          scp -i ~/.ssh/id_deploy ape redbean.com deploy@www.rotko.net:/tmp/sonotxt-cdn/
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" cdn/ deploy@www.rotko.net:/tmp/sonotxt-cdn/
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
-          cd /tmp/sonotxt-cdn
+
+          mkdir -p /srv/sonotxt/cdn
+          cp -r /tmp/sonotxt-cdn/* /srv/sonotxt/cdn/
 
           podman stop sonotxt-cdn 2>/dev/null || true
           podman rm sonotxt-cdn 2>/dev/null || true
-
-          sudo mkdir -p /srv/sonotxt/cdn
-          sudo mv ape /srv/sonotxt/cdn/ape
-          sudo mv redbean.com /srv/sonotxt/cdn/redbean.com
-          sudo chmod +x /srv/sonotxt/cdn/ape /srv/sonotxt/cdn/redbean.com
 
           # Run on port 8103 (haproxy routes cdn.sonotxt.com -> 127.0.0.1:8103)
           podman run -d \
             --name sonotxt-cdn \
             --restart=always \
             -p 127.0.0.1:8103:80 \
-            -v /srv/sonotxt/cdn/redbean.com:/redbean.com:ro \
-            -v /srv/sonotxt/cdn/ape:/usr/bin/ape:ro \
-            alpine:latest /usr/bin/ape /redbean.com -vv -p 80
+            -v /srv/sonotxt/cdn:/usr/share/nginx/html:ro \
+            docker.io/library/nginx:alpine
 
           sleep 2
           curl -sf http://127.0.0.1:8103/embed.js > /dev/null && echo "CDN deploy OK"
