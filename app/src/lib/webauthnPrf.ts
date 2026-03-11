@@ -3,7 +3,7 @@
 // No server-side secrets - all encryption happens client-side
 
 const RP_ID = typeof window !== 'undefined' ? window.location.hostname : 'sonotxt.com'
-const RP_NAME = 'SonoTxt'
+const RP_NAME = 'sonotxt'
 
 // Fixed salt for deriving encryption key (same salt = same key)
 const ENCRYPTION_SALT = new Uint8Array([

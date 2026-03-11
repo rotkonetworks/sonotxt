@@ -18,9 +18,11 @@ import {
   type PasskeyCredential,
 } from './webauthnPrf'
 import * as vault from './vaultClient'
+import { saveAudio, loadAudio, deleteAudio, clearAllAudio } from './audioDB'
 
 export interface HistoryItem {
   id: string
+  type: 'text' | 'speech' | 'translate'
   text: string
   url: string // blob URL for playback or public URL
   jobId?: string
@@ -29,6 +31,8 @@ export interface HistoryItem {
   voice?: string
   date: string
   sourceUrl?: string
+  translation?: string
+  targetLang?: string
   isEncrypted?: boolean // true if stored encrypted in vault
 }
 
@@ -127,11 +131,20 @@ export function createAppStore() {
       setState('freeRemaining', amount)
     },
 
-    addToHistory(item: Omit<HistoryItem, 'id' | 'date'>) {
+    async addToHistory(item: Omit<HistoryItem, 'id' | 'date'>) {
       const newItem: HistoryItem = {
         ...item,
         id: crypto.randomUUID(),
         date: new Date().toISOString(),
+      }
+
+      // Persist audio blob to IndexedDB
+      if (item.url && item.url.startsWith('blob:')) {
+        try {
+          const res = await fetch(item.url)
+          const blob = await res.blob()
+          await saveAudio(newItem.id, blob)
+        } catch {}
       }
 
       setState(
@@ -147,12 +160,28 @@ export function createAppStore() {
       saveToStorage(STORAGE_KEYS.stats, state.stats)
     },
 
+    async restoreAudioUrls() {
+      // Restore blob URLs from IndexedDB for history items
+      for (let i = 0; i < state.history.length; i++) {
+        const item = state.history[i]
+        if (item.url && !item.url.startsWith('blob:')) continue // already a real URL
+        try {
+          const url = await loadAudio(item.id)
+          if (url) {
+            setState('history', i, 'url', url)
+          }
+        } catch {}
+      }
+    },
+
     clearHistory() {
       setState('history', [])
       localStorage.removeItem(STORAGE_KEYS.history)
+      clearAllAudio().catch(() => {})
     },
 
     removeFromHistory(id: string) {
+      deleteAudio(id).catch(() => {})
       setState(
         produce((s) => {
           s.history = s.history.filter((h) => h.id !== id)
@@ -274,7 +303,7 @@ export function createAppStore() {
       // Add to history with vault reference
       const newItem: HistoryItem = {
         id: crypto.randomUUID(),
-        text: text.slice(0, 100),
+        text,
         url: blobUrl,
         vaultId: result.id,
         duration,

@@ -4,7 +4,7 @@ const API_BASE = 'https://api.sonotxt.com';
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'sonotxt-speak',
-    title: 'Listen with SonoTxt (Alt+S)',
+    title: 'Listen with sonotxt (Alt+S)',
     contexts: ['selection']
   });
   chrome.contextMenus.create({

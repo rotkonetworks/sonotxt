@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SonoTxt",
+  "name": "sonotxt",
   "version": "0.1.0",
   "description": "Convert selected text to speech - select text and press Alt+S or right-click",
   "permissions": [

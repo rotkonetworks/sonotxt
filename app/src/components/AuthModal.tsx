@@ -12,7 +12,7 @@ interface Props {
   onLogin: (user: { id: string; nickname?: string; email?: string; balance: number }, token: string) => void
 }
 
-type Mode = 'login' | 'register' | 'magic' | 'recover' | 'show-recovery-share'
+type Mode = 'login' | 'register' | 'magic' | 'recover' | 'show-recovery-share' | 'email-login'
 
 function splitSecret(secret: Uint8Array): { serverShare: Uint8Array; userShare: Uint8Array } {
   const serverShare = randomBytes(secret.length)
@@ -86,7 +86,7 @@ function wordsToBytes(words: string): Uint8Array {
 }
 
 export default function AuthModal(props: Props) {
-  const [mode, setMode] = createSignal<Mode>('login')
+  const [mode, setMode] = createSignal<Mode>('email-login')
   const [nickname, setNickname] = createSignal('')
   const [pin, setPin] = createSignal('')
   const [email, setEmail] = createSignal('')
@@ -145,7 +145,9 @@ export default function AuthModal(props: Props) {
     setLoading(true)
 
     try {
-      if (mode() === 'magic') {
+      if (mode() === 'email-login') {
+        await handleEmailLogin()
+      } else if (mode() === 'magic') {
         await handleMagicLink()
       } else if (mode() === 'register') {
         await handleRegister()
@@ -173,7 +175,7 @@ export default function AuthModal(props: Props) {
     const recEmail = recoveryEmail().trim()
 
     if (nick.length < 3) throw new Error('Nickname must be at least 3 characters')
-    if (p.length < 4) throw new Error('Pin must be at least 4 characters')
+    if (p.length < 8) throw new Error('Password must be at least 8 characters')
 
     const { publicKey, seed } = await deriveKeypair(nick, p)
     const publicKeyHex = bytesToHex(publicKey)
@@ -226,6 +228,13 @@ export default function AuthModal(props: Props) {
     } else {
       setMessage('Check your email for the login link!')
     }
+  }
+
+  async function handleEmailLogin() {
+    const e = email().trim()
+    if (!e) throw new Error('Email required')
+    await api.requestMagicLink(e)
+    setMessage('Check your email for a login link!')
   }
 
   async function handleRecover() {
@@ -304,7 +313,8 @@ export default function AuthModal(props: Props) {
         <div class="titlebar">
           <span class="i-mdi-account-key w-4 h-4 text-accent" />
           <span class="text-accent-strong flex-1 font-heading">
-            {mode() === 'register' ? 'Register' :
+            {mode() === 'email-login' ? 'Sign In' :
+             mode() === 'register' ? 'Register' :
              mode() === 'magic' ? 'Recovery Email' :
              mode() === 'recover' ? 'Recover Account' :
              mode() === 'show-recovery-share' ? 'Save Recovery Words' :
@@ -326,7 +336,7 @@ export default function AuthModal(props: Props) {
                 SAVE THESE RECOVERY WORDS
               </p>
               <p class="text-[10px] text-fg-muted mb-3">
-                Write these down and store them safely. You'll need them + your email to recover your account if you forget your pin.
+                Write these down and store them safely. You'll need them + your email to recover your account if you forget your password.
               </p>
               <div class="bg-page border border-edge-soft p-3 font-mono text-xs text-emerald-700" style={{ 'word-break': 'break-word', 'line-height': '1.6' }}>
                 {recoveryShare()}
@@ -351,7 +361,27 @@ export default function AuthModal(props: Props) {
         {/* Regular forms */}
         <Show when={mode() !== 'show-recovery-share'}>
           <form onSubmit={handleSubmit} style={{ padding: '12px' }}>
-            <Show when={mode() !== 'magic' && mode() !== 'recover'}>
+            {/* Email login — primary flow */}
+            <Show when={mode() === 'email-login'}>
+              <div style={{ 'margin-bottom': '12px' }}>
+                <label style={labelStyle}>Email</label>
+                <div style={inputContainerStyle}>
+                  <input
+                    type="email"
+                    style={inputStyle}
+                    placeholder="you@example.com"
+                    value={email()}
+                    onInput={(e) => setEmail(e.currentTarget.value)}
+                    autofocus
+                  />
+                </div>
+                <p class="text-[9px] text-fg-muted mt-1">
+                  We'll email you a login link. No password needed.
+                </p>
+              </div>
+            </Show>
+
+            <Show when={mode() !== 'magic' && mode() !== 'recover' && mode() !== 'email-login'}>
               <div style={{ 'margin-bottom': '12px' }}>
                 <label style={labelStyle}>Nickname</label>
                 <div style={inputContainerStyle}>
@@ -370,19 +400,19 @@ export default function AuthModal(props: Props) {
 
               <div style={{ 'margin-bottom': '12px' }}>
                 <label style={labelStyle}>
-                  Pin <span class="text-fg-faint">(local only)</span>
+                  Password <span class="text-fg-faint">(local only)</span>
                 </label>
                 <div style={inputContainerStyle}>
                   <input
                     type="password"
                     style={inputStyle}
-                    placeholder="****"
+                    placeholder="min 8 characters"
                     value={pin()}
                     onInput={(e) => setPin(e.currentTarget.value)}
                   />
                 </div>
                 <Show when={mode() === 'register'}>
-                  <p class="text-[9px] text-fg-muted mt-1">Used to derive keys. Cannot be recovered without backup.</p>
+                  <p class="text-[9px] text-fg-muted mt-1">Used to derive keys locally. Never sent to server. Cannot be recovered without backup.</p>
                 </Show>
               </div>
 
@@ -477,49 +507,72 @@ export default function AuthModal(props: Props) {
               {derivingKeys()
                 ? 'DERIVING...'
                 : loading()
-                  ? 'VERIFYING...'
-                  : mode() === 'register'
-                    ? 'CREATE ACCOUNT'
-                    : mode() === 'magic'
-                      ? serverShareHex() ? 'RECOVER ACCOUNT' : 'SEND RECOVERY EMAIL'
-                      : 'LOGIN'}
+                  ? 'SENDING...'
+                  : mode() === 'email-login'
+                    ? 'SEND LOGIN LINK'
+                    : mode() === 'register'
+                      ? 'CREATE ACCOUNT'
+                      : mode() === 'magic'
+                        ? serverShareHex() ? 'RECOVER ACCOUNT' : 'SEND RECOVERY EMAIL'
+                        : 'LOGIN'}
             </button>
           </form>
 
           <div class="border-t border-edge-soft px-3 py-2 text-center text-[10px] text-fg-muted">
+            <Show when={mode() === 'email-login'}>
+              <button
+                onClick={() => { setMode('login'); setMessage('') }}
+                class="bg-transparent border-none text-fg-muted cursor-pointer text-[10px]"
+              >
+                Use password instead
+              </button>
+            </Show>
+
             <Show when={mode() === 'login'}>
+              <button
+                onClick={() => { setMode('email-login'); setMessage('') }}
+                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
+              >
+                Use email link
+              </button>
+              <span class="mx-2">|</span>
               <button
                 onClick={() => setMode('register')}
                 class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
               >
-                New? Register
+                Register
               </button>
-              {/* TODO: enable when email service is wired up
               <span class="mx-2">|</span>
               <button
                 onClick={() => setMode('magic')}
                 class="bg-transparent border-none text-fg-muted cursor-pointer text-[10px]"
               >
-                Forgot pin?
+                Forgot password?
               </button>
-              */}
             </Show>
 
             <Show when={mode() === 'register'}>
               <button
+                onClick={() => { setMode('email-login'); setMessage('') }}
+                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
+              >
+                Use email link
+              </button>
+              <span class="mx-2">|</span>
+              <button
                 onClick={() => setMode('login')}
                 class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
               >
-                Have account? Login
+                Login
               </button>
             </Show>
 
             <Show when={mode() === 'magic'}>
               <button
-                onClick={() => { setMode('login'); setServerShareHex(''); setMessage('') }}
+                onClick={() => { setMode('email-login'); setServerShareHex(''); setMessage('') }}
                 class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
               >
-                Back to login
+                Back
               </button>
             </Show>
           </div>

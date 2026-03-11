@@ -1,4 +1,4 @@
-name: Deploy SonoTxt
+name: Deploy sonotxt
 
 on:
   push:
@@ -100,10 +100,22 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock', 'hwpay/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libtss2-dev pkg-config
 
       - name: Build API server
+        env:
+          SQLX_OFFLINE: "true"
         run: |
           cd rust
           cargo build --release
@@ -130,12 +142,12 @@ jobs:
           sudo mv /tmp/sonotxt-api /srv/sonotxt/api/sonotxt
           sudo chmod +x /srv/sonotxt/api/sonotxt
 
-          # Create systemd service if not exists
-          if [ ! -f /etc/systemd/system/sonotxt-api.service ]; then
-            sudo tee /etc/systemd/system/sonotxt-api.service > /dev/null <<'SERVICE'
+          # Write systemd service (always update)
+          sudo tee /etc/systemd/system/sonotxt-api.service > /dev/null <<'SERVICE'
           [Unit]
-          Description=SonoTxt API Server
-          After=network.target
+          Description=sonotxt API Server
+          After=network.target postgresql.service redis.service
+          Wants=postgresql.service redis.service
 
           [Service]
           Type=simple
@@ -144,16 +156,27 @@ jobs:
           ExecStart=/srv/sonotxt/api/sonotxt
           Restart=always
           RestartSec=5
+
+          # Secrets from env file (STRIPE_SECRET_KEY, VAULT_PASSWORD, DEPOSIT_WALLET_SEED, etc.)
+          EnvironmentFile=-/srv/sonotxt/api/.env
+
+          # Non-secret defaults
           Environment=RUST_LOG=info
           Environment=DATABASE_URL=postgres://sonotxt:sonotxt@localhost/sonotxt
-          Environment=LISTEN_ADDR=127.0.0.1:8102
+          Environment=SERVER_HOST=127.0.0.1
+          Environment=SERVER_PORT=8102
+          Environment=APP_URL=https://app.sonotxt.com
+          Environment=AUDIO_PUBLIC_URL=https://audio.sonotxt.com/sonotxt-audio
+          Environment=MINIO_ENDPOINT=http://localhost:9000
+          Environment=S3_BUCKET=sonotxt-audio
+          Environment=ASSETHUB_RPC=wss://polkadot-asset-hub-rpc.polkadot.io
+          Environment=ASSETHUB_LISTENER_ENABLED=true
 
           [Install]
           WantedBy=multi-user.target
           SERVICE
-            sudo systemctl daemon-reload
-            sudo systemctl enable sonotxt-api
-          fi
+          sudo systemctl daemon-reload
+          sudo systemctl enable sonotxt-api
 
           # Start
           sudo systemctl start sonotxt-api

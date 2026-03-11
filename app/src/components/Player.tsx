@@ -269,7 +269,7 @@ export function Player(props: PlayerProps) {
     if (!props.src) return
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'SonoTxt Audio', url: props.src })
+        await navigator.share({ title: 'sonotxt audio', url: props.src })
       } catch {}
     } else {
       await navigator.clipboard.writeText(props.src)

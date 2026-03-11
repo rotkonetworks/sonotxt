@@ -210,6 +210,50 @@ export async function getFreeBalance(token?: string | null): Promise<FreeBalance
   return request('/api/free-balance', { headers })
 }
 
+// Payments
+export interface CheckoutResponse {
+  url: string
+}
+
+export async function createStripeCheckout(
+  token: string,
+  amount: number,
+  currency: string = 'eur'
+): Promise<CheckoutResponse> {
+  return request('/api/payments/stripe/checkout', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ amount, currency }),
+  })
+}
+
+export interface DepositAddresses {
+  polkadot_assethub?: string
+  penumbra?: string
+}
+
+export async function getDepositAddresses(token: string): Promise<DepositAddresses> {
+  return request('/api/payments/addresses', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export interface DepositEntry {
+  id: string
+  chain: string
+  tx_hash: string
+  asset: string
+  amount: number
+  status: string
+  created_at: string
+}
+
+export async function listDeposits(token: string): Promise<DepositEntry[]> {
+  return request('/api/payments/deposits', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
 // Download helper - returns URL for downloading audio via API proxy
 export function getDownloadUrl(jobId: string): string {
   return `${API}/api/download/${jobId}`

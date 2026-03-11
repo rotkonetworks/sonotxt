@@ -1,5 +1,6 @@
 import { createSignal, createEffect, Show, For } from 'solid-js'
 import { useStore } from '../lib/store'
+import * as api from '../lib/api'
 import PasskeyAuth from './PasskeyAuth'
 
 interface Props {
@@ -8,46 +9,32 @@ interface Props {
 
 type Tab = 'overview' | 'deposits' | 'api-keys' | 'history' | 'security' | 'private'
 
-interface Deposit {
-  id: string
-  chain: string
-  tx_hash: string
-  asset: string
-  amount: number
-  status: string
-  created_at: string
-}
-
-interface DepositAddresses {
-  polkadot_assethub?: string
-  penumbra?: string
-}
-
-const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
-
 export default function ProfilePage(props: Props) {
   const { state: store, token, actions } = useStore()
   const [tab, setTab] = createSignal<Tab>('overview')
-  const [addresses, setAddresses] = createSignal<DepositAddresses>({})
-  const [deposits, setDeposits] = createSignal<Deposit[]>([])
+  const [addresses, setAddresses] = createSignal<api.DepositAddresses>({})
+  const [deposits, setDeposits] = createSignal<api.DepositEntry[]>([])
   const [loading, setLoading] = createSignal(false)
   const [copied, setCopied] = createSignal<string | null>(null)
+
+  // Stripe checkout
+  const [checkoutAmount, setCheckoutAmount] = createSignal(10)
+  const [checkoutCurrency, setCheckoutCurrency] = createSignal('eur')
+  const [checkoutLoading, setCheckoutLoading] = createSignal(false)
+  const [checkoutError, setCheckoutError] = createSignal<string | null>(null)
 
   const [teeUrl, setTeeUrl] = createSignal(localStorage.getItem('tee_url') || 'ws://localhost:4434/ws')
   const [teeConnecting, setTeeConnecting] = createSignal(false)
   const [teeError, setTeeError] = createSignal<string | null>(null)
 
   createEffect(async () => {
-    if (!token()) return
+    const tok = token()
+    if (!tok) return
     setLoading(true)
     try {
       const [addrRes, depsRes] = await Promise.all([
-        fetch(`${API}/payments/addresses`, {
-          headers: { Authorization: `Bearer ${token()}` }
-        }).then(r => r.json()),
-        fetch(`${API}/payments/deposits`, {
-          headers: { Authorization: `Bearer ${token()}` }
-        }).then(r => r.json())
+        api.getDepositAddresses(tok),
+        api.listDeposits(tok),
       ])
       setAddresses(addrRes)
       setDeposits(depsRes)
@@ -56,6 +43,20 @@ export default function ProfilePage(props: Props) {
     }
     setLoading(false)
   })
+
+  async function startStripeCheckout() {
+    const tok = token()
+    if (!tok) return
+    setCheckoutLoading(true)
+    setCheckoutError(null)
+    try {
+      const { url } = await api.createStripeCheckout(tok, checkoutAmount(), checkoutCurrency())
+      window.location.href = url
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : 'Checkout failed')
+      setCheckoutLoading(false)
+    }
+  }
 
   async function copyAddress(addr: string, type: string) {
     await navigator.clipboard.writeText(addr)
@@ -162,8 +163,67 @@ export default function ProfilePage(props: Props) {
           {/* Deposits Tab */}
           <Show when={tab() === 'deposits'}>
             <div class="space-y-4">
+              {/* Card Payment */}
+              <div class="panel-inset p-4">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="i-mdi-credit-card text-accent w-4 h-4" />
+                  <span class="text-xs text-fg font-heading font-semibold">Pay with Card</span>
+                </div>
+
+                <div class="flex gap-2 mb-3">
+                  {[5, 10, 25, 50].map(amt => (
+                    <button
+                      class={`flex-1 py-2 text-xs font-mono border-2 transition-all ${
+                        checkoutAmount() === amt
+                          ? 'border-accent bg-accent-soft text-accent-strong'
+                          : 'border-edge-soft bg-surface text-fg-muted hover:border-accent'
+                      }`}
+                      onClick={() => setCheckoutAmount(amt)}
+                    >
+                      {checkoutCurrency() === 'eur' ? '\u20AC' : '$'}{amt}
+                    </button>
+                  ))}
+                </div>
+
+                <div class="flex gap-2 mb-3">
+                  <select
+                    class="px-2 py-1.5 text-xs bg-surface border border-edge-soft text-fg font-mono"
+                    value={checkoutCurrency()}
+                    onChange={(e) => setCheckoutCurrency(e.currentTarget.value)}
+                  >
+                    <option value="eur">EUR</option>
+                    <option value="usd">USD</option>
+                  </select>
+                  <button
+                    class="flex-1 btn-win primary py-2 text-xs flex items-center justify-center gap-2"
+                    disabled={checkoutLoading()}
+                    onClick={startStripeCheckout}
+                  >
+                    <Show when={checkoutLoading()} fallback={
+                      <>
+                        <span class="i-mdi-lock w-3 h-3" />
+                        Pay {checkoutCurrency() === 'eur' ? '\u20AC' : '$'}{checkoutAmount()}
+                      </>
+                    }>
+                      <span class="animate-pulse">Redirecting...</span>
+                    </Show>
+                  </button>
+                </div>
+
+                <div class="text-[10px] text-fg-faint">
+                  ~{(checkoutAmount() / 0.0000016 / 1000000).toFixed(1)}M chars at $1.60/M
+                </div>
+
+                <Show when={checkoutError()}>
+                  <div class="text-xs text-red-700 bg-red-50 border border-red-200 p-2 mt-2">
+                    {checkoutError()}
+                  </div>
+                </Show>
+              </div>
+
+              {/* Crypto Deposit Addresses */}
               <div>
-                <div class="text-[10px] text-fg-muted uppercase mb-2 font-heading">Deposit Addresses</div>
+                <div class="text-[10px] text-fg-muted uppercase mb-2 font-heading">Crypto Deposits</div>
 
                 <Show when={addresses().polkadot_assethub}>
                   <div class="panel-inset p-3 mb-2">
@@ -187,7 +247,7 @@ export default function ProfilePage(props: Props) {
                 </Show>
 
                 <Show when={addresses().penumbra}>
-                  <div class="panel-inset p-3">
+                  <div class="panel-inset p-3 mb-2">
                     <div class="flex items-center gap-2 mb-2">
                       <span class="i-mdi-shield-lock text-purple-400 w-3 h-3" />
                       <span class="text-xs text-fg">Penumbra</span>
@@ -209,7 +269,7 @@ export default function ProfilePage(props: Props) {
 
                 <Show when={!addresses().polkadot_assethub && !addresses().penumbra && !loading()}>
                   <div class="text-xs text-fg-muted p-4 text-center">
-                    No deposit addresses available yet.
+                    No crypto deposit addresses available yet.
                   </div>
                 </Show>
               </div>
@@ -232,6 +292,7 @@ export default function ProfilePage(props: Props) {
                               <span class="text-[10px] text-fg-muted ml-2">{dep.chain}</span>
                             </div>
                             <span class={`text-[10px] px-2 py-0.5 ${
+                              dep.status === 'credited' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                               dep.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                               dep.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
                               'bg-red-50 text-red-700 border border-red-200'
@@ -257,7 +318,7 @@ export default function ProfilePage(props: Props) {
               <div class="panel-inset p-4">
                 <div class="text-xs text-fg mb-2 font-heading">API Access</div>
                 <div class="text-[10px] text-fg-muted mb-4">
-                  Use API keys to integrate SonoTxt TTS into your applications.
+                  Use API keys to integrate sonotxt TTS into your applications.
                 </div>
                 <button class="btn-win primary">Generate API Key</button>
               </div>

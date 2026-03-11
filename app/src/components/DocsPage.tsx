@@ -58,7 +58,7 @@ const DocsPage: Component<Props> = (props) => {
               <div class="space-y-4">
                 <h2 class="text-lg font-semibold text-accent font-heading">How Private Mode Works</h2>
                 <p class="text-fg">
-                  SonoTxt offers an optional <strong class="text-purple-600">Private Mode</strong> that provides
+                  sonotxt offers an optional <strong class="text-purple-600">Private Mode</strong> that provides
                   end-to-end encrypted text-to-speech synthesis. When enabled, your text is encrypted in your browser
                   before being sent to our servers, processed inside a hardware-isolated enclave, and the resulting
                   audio is encrypted before being sent back to you.
@@ -134,7 +134,7 @@ const DocsPage: Component<Props> = (props) => {
                                                   │ encrypted
                                                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                     SONOTXT SERVER                           │
+│                     sonotxt server                            │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │              TEE ENCLAVE (SEV-SNP/TDX)                │   │
 │  │  ┌────────────┐  ┌─────────────┐  ┌──────────────┐   │   │
