@@ -303,6 +303,7 @@ export function createAppStore() {
       // Add to history with vault reference
       const newItem: HistoryItem = {
         id: crypto.randomUUID(),
+        type: 'speech',
         text,
         url: blobUrl,
         vaultId: result.id,

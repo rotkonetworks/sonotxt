@@ -79,10 +79,6 @@ export default function App() {
     showToast(`Welcome, ${name}!`, 'success')
   }
 
-  function logout() {
-    actions.logout()
-    showToast('Logged out', 'success')
-  }
 
   function openInEditor(item: HistoryItem) {
     currentAudio?.pause()
