@@ -37,14 +37,13 @@ jobs:
 
       - name: Deploy app
         run: |
-          # Upload built files
           rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" app/dist/ deploy@www.rotko.net:/tmp/sonotxt-app/
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
 
-          # Deploy to sonotxt.com (port 8100) - landing redirect
-          mkdir -p /srv/sonotxt/landing
-          cp -r /tmp/sonotxt-app/* /srv/sonotxt/landing/
+          mkdir -p ~/sonotxt/landing ~/sonotxt/dashboard
+          rsync -a --delete /tmp/sonotxt-app/ ~/sonotxt/landing/
+          rsync -a --delete /tmp/sonotxt-app/ ~/sonotxt/dashboard/
 
           podman stop sonotxt-landing 2>/dev/null || true
           podman rm sonotxt-landing 2>/dev/null || true
@@ -52,12 +51,8 @@ jobs:
             --name sonotxt-landing \
             --restart=always \
             -p 127.0.0.1:8100:80 \
-            -v /srv/sonotxt/landing:/usr/share/nginx/html:ro \
+            -v ~/sonotxt/landing:/usr/share/nginx/html:ro \
             docker.io/library/nginx:alpine
-
-          # Deploy to app.sonotxt.com (port 8101)
-          mkdir -p /srv/sonotxt/dashboard
-          cp -r /tmp/sonotxt-app/* /srv/sonotxt/dashboard/
 
           podman stop sonotxt-dashboard 2>/dev/null || true
           podman rm sonotxt-dashboard 2>/dev/null || true
@@ -65,7 +60,7 @@ jobs:
             --name sonotxt-dashboard \
             --restart=always \
             -p 127.0.0.1:8101:80 \
-            -v /srv/sonotxt/dashboard:/usr/share/nginx/html:ro \
+            -v ~/sonotxt/dashboard:/usr/share/nginx/html:ro \
             docker.io/library/nginx:alpine
 
           sleep 2
@@ -118,52 +113,41 @@ jobs:
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
 
-          # Stop existing
-          sudo systemctl stop sonotxt-api 2>/dev/null || true
+          mkdir -p ~/sonotxt/api
+
+          # Stop existing process
+          if [ -f ~/sonotxt/api/sonotxt.pid ]; then
+            kill "$(cat ~/sonotxt/api/sonotxt.pid)" 2>/dev/null || true
+            sleep 1
+          fi
 
           # Install binary
-          sudo mkdir -p /srv/sonotxt/api
-          sudo mv /tmp/sonotxt-api /srv/sonotxt/api/sonotxt
-          sudo chmod +x /srv/sonotxt/api/sonotxt
+          mv /tmp/sonotxt-api ~/sonotxt/api/sonotxt
+          chmod +x ~/sonotxt/api/sonotxt
 
-          # Write systemd service (always update)
-          sudo tee /etc/systemd/system/sonotxt-api.service > /dev/null <<'SERVICE'
-          [Unit]
-          Description=sonotxt API Server
-          After=network.target postgresql.service redis.service
-          Wants=postgresql.service redis.service
+          # Write env defaults (secrets in .env override these)
+          cat > ~/sonotxt/api/env.defaults <<'ENVFILE'
+          RUST_LOG=info
+          DATABASE_URL=postgres://sonotxt:sonotxt@localhost/sonotxt
+          SERVER_HOST=127.0.0.1
+          SERVER_PORT=8102
+          APP_URL=https://app.sonotxt.com
+          AUDIO_PUBLIC_URL=https://audio.sonotxt.com/sonotxt-audio
+          MINIO_ENDPOINT=http://localhost:9000
+          S3_BUCKET=sonotxt-audio
+          ASSETHUB_RPC=wss://polkadot-asset-hub-rpc.polkadot.io
+          ASSETHUB_LISTENER_ENABLED=true
+          ENVFILE
 
-          [Service]
-          Type=simple
-          User=sonotxt
-          WorkingDirectory=/srv/sonotxt/api
-          ExecStart=/srv/sonotxt/api/sonotxt
-          Restart=always
-          RestartSec=5
+          # Start API in background
+          cd ~/sonotxt/api
+          set -a
+          . ./env.defaults
+          [ -f .env ] && . .env
+          set +a
+          nohup ./sonotxt > api.log 2>&1 &
+          echo $! > sonotxt.pid
 
-          # Secrets from env file (STRIPE_SECRET_KEY, VAULT_PASSWORD, DEPOSIT_WALLET_SEED, etc.)
-          EnvironmentFile=-/srv/sonotxt/api/.env
-
-          # Non-secret defaults
-          Environment=RUST_LOG=info
-          Environment=DATABASE_URL=postgres://sonotxt:sonotxt@localhost/sonotxt
-          Environment=SERVER_HOST=127.0.0.1
-          Environment=SERVER_PORT=8102
-          Environment=APP_URL=https://app.sonotxt.com
-          Environment=AUDIO_PUBLIC_URL=https://audio.sonotxt.com/sonotxt-audio
-          Environment=MINIO_ENDPOINT=http://localhost:9000
-          Environment=S3_BUCKET=sonotxt-audio
-          Environment=ASSETHUB_RPC=wss://polkadot-asset-hub-rpc.polkadot.io
-          Environment=ASSETHUB_LISTENER_ENABLED=true
-
-          [Install]
-          WantedBy=multi-user.target
-          SERVICE
-          sudo systemctl daemon-reload
-          sudo systemctl enable sonotxt-api
-
-          # Start
-          sudo systemctl start sonotxt-api
           sleep 2
           curl -sf http://127.0.0.1:8102/api/voices > /dev/null && echo "API deploy OK"
           EOF
@@ -193,8 +177,8 @@ jobs:
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
 
-          mkdir -p /srv/sonotxt/cdn
-          cp -r /tmp/sonotxt-cdn/* /srv/sonotxt/cdn/
+          mkdir -p ~/sonotxt/cdn
+          rsync -a --delete /tmp/sonotxt-cdn/ ~/sonotxt/cdn/
 
           podman stop sonotxt-cdn 2>/dev/null || true
           podman rm sonotxt-cdn 2>/dev/null || true
@@ -204,7 +188,7 @@ jobs:
             --name sonotxt-cdn \
             --restart=always \
             -p 127.0.0.1:8103:80 \
-            -v /srv/sonotxt/cdn:/usr/share/nginx/html:ro \
+            -v ~/sonotxt/cdn:/usr/share/nginx/html:ro \
             docker.io/library/nginx:alpine
 
           sleep 2
