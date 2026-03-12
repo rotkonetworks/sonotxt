@@ -115,10 +115,21 @@ jobs:
           set -e
           mkdir -p ~/sonotxt/api
 
-          # Kill ALL sonotxt processes (nohup or systemd)
+          # Stop old systemd service if running (needs sudo)
+          if sudo -n true 2>/dev/null; then
+            sudo systemctl stop sonotxt-api 2>/dev/null || true
+            sudo systemctl disable sonotxt-api 2>/dev/null || true
+          fi
+
+          # Kill any sonotxt process we own
           pkill -f "sonotxt/api/sonotxt" 2>/dev/null || true
-          pkill -f "/srv/sonotxt/api/sonotxt" 2>/dev/null || true
           sleep 2
+
+          # Check if port is free
+          if ss -tlnp 2>/dev/null | grep -q ':8102 '; then
+            echo "WARNING: port 8102 still in use (old systemd service?)"
+            echo "Run on server: sudo systemctl stop sonotxt-api && sudo systemctl disable sonotxt-api"
+          fi
 
           # Install binary
           mv /tmp/sonotxt-api ~/sonotxt/api/sonotxt
