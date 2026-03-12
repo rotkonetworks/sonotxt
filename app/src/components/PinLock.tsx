@@ -62,10 +62,6 @@ export default function PinLock(props: Props) {
     setError(false)
   }
 
-  function clear() {
-    setPin('')
-    setError(false)
-  }
 
   const keys = [
     ['1', '2', '3'],

@@ -11,7 +11,7 @@ interface Props {
 type Tab = 'overview' | 'deposits' | 'api-keys' | 'history' | 'security' | 'private'
 
 export default function ProfilePage(props: Props) {
-  const { state: store, token, actions } = useStore()
+  const { state: store, token } = useStore()
   const [tab, setTab] = createSignal<Tab>('overview')
   const [addresses, setAddresses] = createSignal<api.DepositAddresses>({})
   const [deposits, setDeposits] = createSignal<api.DepositEntry[]>([])
