@@ -1,8 +1,9 @@
 import { createSignal, createEffect, For, Show } from 'solid-js'
 import type { HistoryItem } from '../lib/store'
 
-const SPEECH_URL = import.meta.env.VITE_SPEECH_URL || 'http://localhost:8080'
-const LLM_URL = import.meta.env.VITE_LLM_URL || 'http://localhost:8090'
+const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
+const SPEECH_URL = import.meta.env.VITE_SPEECH_URL || `${API}/api/voice`
+const LLM_URL = import.meta.env.VITE_LLM_URL || `${API}/api/voice`
 
 interface Props {
   onHistoryAdd?: (item: Omit<HistoryItem, 'id' | 'date'>) => void

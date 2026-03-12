@@ -1,8 +1,7 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js'
 import type { HistoryItem } from '../lib/store'
 
-const SPEECH_URL = import.meta.env.VITE_SPEECH_URL || 'http://localhost:8080'
-const LLM_URL = import.meta.env.VITE_LLM_URL || 'http://localhost:8090'
+const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
 
 interface Props {
   onHistoryAdd?: (item: Omit<HistoryItem, 'id' | 'date'>) => void
@@ -151,20 +150,28 @@ export default function VoiceTerminal(props: Props) {
     const t0 = performance.now()
     try {
       setPhase('asr')
-      const fd = new FormData(); fd.append('audio', blob, 'audio.webm')
-      const ar = await fetch(`${SPEECH_URL}/transcribe`, { method: 'POST', body: fd })
+      const buf = await blob.arrayBuffer()
+      const bytes = new Uint8Array(buf)
+      let binary = ''
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+      const audio_base64 = btoa(binary)
+      const ar = await fetch(`${API}/api/voice/transcribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_base64 }),
+      })
       if (!ar.ok) throw new Error(`ASR ${ar.status}`)
       const asr = await ar.json()
       const asrMs = Math.round(performance.now() - t0)
-      if (asr.language && !detectedLanguage) detectedLanguage = asr.language
 
       // Store user's recording audio
       const recUrl = URL.createObjectURL(blob)
-      addMsg('user', asr.text, { audioUrl: recUrl })
-      chatHistory.push({ role: 'user', content: asr.text })
+      const transcript = asr.transcript || asr.text
+      addMsg('user', transcript, { audioUrl: recUrl })
+      chatHistory.push({ role: 'user', content: transcript })
 
       if (pipelineMode() === 'translate') {
-        await handleTranslate(asr.text, asrMs, t0)
+        await handleTranslate(transcript, asrMs, t0)
       } else {
         await handleChat(asrMs, t0)
       }
@@ -176,22 +183,23 @@ export default function VoiceTerminal(props: Props) {
     setPhase('llm')
     const t1 = performance.now()
     const sys = detectedLanguage ? [{ role: 'system', content: `Always respond in ${detectedLanguage}.` }] : []
-    const lr = await fetch(`${LLM_URL}/chat_sentences`, {
+    const lr = await fetch(`${API}/api/voice/chat`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: [...sys, ...chatHistory] }),
     })
     if (!lr.ok) throw new Error(`LLM ${lr.status}`)
     const llm = await lr.json()
     const llmMs = Math.round(performance.now() - t1)
-    chatHistory.push({ role: 'assistant', content: llm.full_response })
+    const fullResponse = llm.response || llm.full_response
+    chatHistory.push({ role: 'assistant', content: fullResponse })
 
     const { audioUrl, ttsMs } = await speakAndCapture(llm.sentences, detectedLanguage || 'auto')
-    addMsg('assistant', llm.full_response, { audioUrl })
+    addMsg('assistant', fullResponse, { audioUrl })
     addMsg('system', `${asrMs} + ${llmMs} + ${ttsMs.join('+')} = ${Math.round(performance.now() - t0)}ms`)
 
     props.onHistoryAdd?.({
       type: 'speech',
-      text: llm.full_response,
+      text: fullResponse,
       url: audioUrl,
       duration: Math.round((performance.now() - t0) / 1000),
       voice: speaker(),
@@ -204,7 +212,7 @@ export default function VoiceTerminal(props: Props) {
 
     setPhase('llm')
     const t1 = performance.now()
-    const lr = await fetch(`${LLM_URL}/chat_sentences`, {
+    const lr = await fetch(`${API}/api/voice/chat`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: [
@@ -216,9 +224,10 @@ export default function VoiceTerminal(props: Props) {
     if (!lr.ok) throw new Error(`LLM ${lr.status}`)
     const llm = await lr.json()
     const llmMs = Math.round(performance.now() - t1)
+    const fullResponse = llm.response || llm.full_response
 
     const { audioUrl, ttsMs } = await speakAndCapture(llm.sentences, targetLang())
-    addMsg('assistant', llm.full_response, { audioUrl, translation: userText })
+    addMsg('assistant', fullResponse, { audioUrl, translation: userText })
     addMsg('system', `${asrMs} + ${llmMs} + ${ttsMs.join('+')} = ${Math.round(performance.now() - t0)}ms`)
 
     props.onHistoryAdd?.({
@@ -240,12 +249,16 @@ export default function VoiceTerminal(props: Props) {
     for (let i = 0; i < sentences.length; i++) {
       setPhase('tts')
       const ts = performance.now()
-      const tr = await fetch(`${SPEECH_URL}/synthesize`, {
+      const tr = await fetch(`${API}/api/voice/synthesize`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: sentences[i], speaker: speaker(), language }),
       })
       if (!tr.ok) { ttsMs.push(Math.round(performance.now() - ts)); continue }
-      const buf = await tr.arrayBuffer()
+      const ttsData = await tr.json()
+      const binary = atob(ttsData.audio_base64)
+      const buf = new ArrayBuffer(binary.length)
+      const view = new Uint8Array(buf)
+      for (let j = 0; j < binary.length; j++) view[j] = binary.charCodeAt(j)
       ttsMs.push(Math.round(performance.now() - ts))
       audioBuffers.push(buf)
       setPhase('play')
