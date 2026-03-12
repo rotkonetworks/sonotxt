@@ -115,27 +115,14 @@ jobs:
           set -e
           mkdir -p ~/sonotxt/api
 
-          # Stop old systemd service if running (needs sudo)
-          if sudo -n true 2>/dev/null; then
-            sudo systemctl stop sonotxt-api 2>/dev/null || true
-            sudo systemctl disable sonotxt-api 2>/dev/null || true
-          fi
-
-          # Kill any sonotxt process we own
-          pkill -f "sonotxt/api/sonotxt" 2>/dev/null || true
-          sleep 2
-
-          # Check if port is free
-          if ss -tlnp 2>/dev/null | grep -q ':8102 '; then
-            echo "WARNING: port 8102 still in use (old systemd service?)"
-            echo "Run on server: sudo systemctl stop sonotxt-api && sudo systemctl disable sonotxt-api"
-          fi
+          # Stop API service
+          sudo systemctl stop sonotxt-api 2>/dev/null || true
 
           # Install binary
           mv /tmp/sonotxt-api ~/sonotxt/api/sonotxt
           chmod +x ~/sonotxt/api/sonotxt
 
-          # Write env defaults
+          # Write env defaults (secrets not in .env go here)
           printf '%s\n' \
             'RUST_LOG=info' \
             'DATABASE_URL=postgres://sonotxt:sonotxt@localhost/sonotxt' \
@@ -147,17 +134,13 @@ jobs:
             'S3_BUCKET=sonotxt-audio' \
             'ASSETHUB_RPC=wss://polkadot-asset-hub-rpc.polkadot.io' \
             'ASSETHUB_LISTENER_ENABLED=true' \
+            'SONO_RPC_URL=${{ secrets.SONO_RPC_URL }}' \
+            'SONO_CONTRACT=${{ secrets.SONO_CONTRACT }}' \
+            'SONO_SERVICE_KEY=${{ secrets.SONO_SERVICE_KEY }}' \
             > ~/sonotxt/api/env.defaults
 
-          # Start API
-          cd ~/sonotxt/api
-          set -a
-          . ./env.defaults
-          [ -f .env ] && . .env
-          set +a
-          nohup ./sonotxt > api.log 2>&1 &
-          echo $! > sonotxt.pid
-          disown
+          # Restart API via systemd
+          sudo systemctl restart sonotxt-api
 
           sleep 3
           curl -sf http://127.0.0.1:8102/api/voices > /dev/null && echo "API deploy OK"
