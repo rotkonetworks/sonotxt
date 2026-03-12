@@ -4,7 +4,6 @@ import { useStore } from './lib/store'
 import type { HistoryItem } from './lib/store'
 import * as api from './lib/api'
 import type { User } from './lib/api'
-
 const VoiceTerminal = lazy(() => import('./components/VoiceTerminal'))
 const TextTerminal = lazy(() => import('./components/TextTerminal'))
 const AuthModal = lazy(() => import('./components/AuthModal'))
@@ -138,8 +137,8 @@ export default function App() {
 
   return (
     <div class="h-screen flex">
-      {/* Thin sidebar — always visible on desktop */}
-      <div class="hidden lg:flex flex-shrink-0 w-12 bg-surface border-r-2 border-edge flex-col items-center py-2 gap-1">
+      {/* Thin sidebar — always visible */}
+      <div class="flex flex-shrink-0 w-12 bg-surface border-r-2 border-edge flex-col items-center py-2 gap-1">
         <button class="p-2 text-fg-faint hover:text-accent" onClick={() => setSidebarOpen(!sidebarOpen())} title="History">
           <span class={sidebarOpen() ? 'i-mdi-menu-open w-5 h-5' : 'i-mdi-menu w-5 h-5'} />
         </button>
@@ -175,11 +174,9 @@ export default function App() {
 
       {/* Sidebar overlay — slides over content, never pushes it */}
       <Show when={sidebarOpen()}>
-        <div class="fixed inset-0 z-30 bg-black/30" onClick={() => setSidebarOpen(false)} />
+        <div class="fixed inset-y-0 right-0 left-12 z-30 bg-black/30" onClick={() => setSidebarOpen(false)} />
       </Show>
-      <aside class={`fixed inset-y-0 left-0 lg:left-12 z-40 w-64 bg-surface border-r-2 border-edge flex flex-col transition-transform duration-200 ${
-        sidebarOpen() ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      <aside class="fixed inset-y-0 left-12 z-40 w-64 bg-surface border-r-2 border-edge flex flex-col" style={{ display: sidebarOpen() ? 'flex' : 'none' }}>
         <div class="w-64 flex flex-col h-full">
           {/* Header */}
           <div class="flex items-center justify-between px-4 py-3 border-b-2 border-edge flex-shrink-0">
@@ -287,33 +284,8 @@ export default function App() {
       <div class="flex-1 flex flex-col min-h-0 min-w-0">
         {/* Top bar */}
         <div class="flex items-center gap-1 px-2 py-1.5 border-b border-edge-soft bg-surface flex-shrink-0">
-          {/* Hamburger — mobile only */}
-          <button class="lg:hidden text-fg-faint hover:text-accent p-1.5" onClick={() => setSidebarOpen(!sidebarOpen())} title="History">
-            <span class="i-mdi-menu w-5 h-5" />
-          </button>
-          {/* Mode icons — mobile only (desktop has thin sidebar) */}
-          <div class="flex-1 flex lg:hidden items-center justify-center gap-1">
-            <button
-              class={`p-1.5 transition-colors ${mode() === 'chat' ? 'text-accent' : 'text-fg-faint'}`}
-              onClick={() => setMode('chat')}
-            >
-              <span class="i-mdi-microphone w-4 h-4" />
-            </button>
-            <button
-              class={`p-1.5 transition-colors ${mode() === 'translate' ? 'text-accent' : 'text-fg-faint'}`}
-              onClick={() => setMode('translate')}
-            >
-              <span class="i-mdi-translate w-4 h-4" />
-            </button>
-            <button
-              class={`p-1.5 transition-colors ${mode() === 'text' ? 'text-accent' : 'text-fg-faint'}`}
-              onClick={() => setMode('text')}
-            >
-              <span class="i-mdi-volume-high w-4 h-4" />
-            </button>
-          </div>
-          <div class="hidden lg:block flex-1" />
-          {/* Login / Profile — always visible, top right */}
+          <div class="flex-1" />
+          {/* Login / Profile */}
           <Show when={store.user} fallback={
             <div class="relative">
               <button

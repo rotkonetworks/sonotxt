@@ -2,6 +2,7 @@ import { createSignal, createEffect, Show, For } from 'solid-js'
 import { useStore } from '../lib/store'
 import * as api from '../lib/api'
 import PasskeyAuth from './PasskeyAuth'
+import { hasPinLock, setPinLock, removePinLock } from './PinLock'
 
 interface Props {
   onClose: () => void
@@ -23,9 +24,10 @@ export default function ProfilePage(props: Props) {
   const [checkoutLoading, setCheckoutLoading] = createSignal(false)
   const [checkoutError, setCheckoutError] = createSignal<string | null>(null)
 
-  const [teeUrl, setTeeUrl] = createSignal(localStorage.getItem('tee_url') || 'ws://localhost:4434/ws')
-  const [teeConnecting, setTeeConnecting] = createSignal(false)
-  const [teeError, setTeeError] = createSignal<string | null>(null)
+  // TEE state — uncomment when private mode is ready
+  // const [teeUrl, setTeeUrl] = createSignal(localStorage.getItem('tee_url') || 'ws://localhost:4434/ws')
+  // const [teeConnecting, setTeeConnecting] = createSignal(false)
+  // const [teeError, setTeeError] = createSignal<string | null>(null)
 
   createEffect(async () => {
     const tok = token()
@@ -102,7 +104,7 @@ export default function ProfilePage(props: Props) {
           <button class={tabClass('api-keys')} onClick={() => setTab('api-keys')}>API Keys</button>
           <button class={tabClass('history')} onClick={() => setTab('history')}>History</button>
           <button class={tabClass('security')} onClick={() => setTab('security')}>Security</button>
-          <button class={tabClass('private')} onClick={() => setTab('private')}>Private</button>
+          {/* <button class={tabClass('private')} onClick={() => setTab('private')}>Private</button> */}
         </div>
 
         {/* Content */}
@@ -356,6 +358,106 @@ export default function ProfilePage(props: Props) {
           {/* Security Tab */}
           <Show when={tab() === 'security'}>
             <div class="space-y-4">
+              {/* PIN Lock */}
+              {(() => {
+                const [pinEnabled, setPinEnabled] = createSignal(hasPinLock())
+                const [newPin, setNewPin] = createSignal('')
+                const [confirmPin, setConfirmPin] = createSignal('')
+                const [pinError, setPinError] = createSignal('')
+                const [showPinSetup, setShowPinSetup] = createSignal(false)
+
+                async function handleSetPin() {
+                  if (newPin().length !== 4) {
+                    setPinError('PIN must be 4 digits')
+                    return
+                  }
+                  if (!/^\d{4}$/.test(newPin())) {
+                    setPinError('PIN must be numbers only')
+                    return
+                  }
+                  if (newPin() !== confirmPin()) {
+                    setPinError('PINs do not match')
+                    return
+                  }
+                  await setPinLock(newPin())
+                  setPinEnabled(true)
+                  setShowPinSetup(false)
+                  setNewPin('')
+                  setConfirmPin('')
+                  setPinError('')
+                }
+
+                function handleRemovePin() {
+                  removePinLock()
+                  setPinEnabled(false)
+                }
+
+                return (
+                  <div class="panel-inset p-4">
+                    <div class="flex items-center gap-2 mb-3">
+                      <span class="i-mdi-lock text-accent w-5 h-5" />
+                      <span class="text-sm text-fg font-heading font-semibold">PIN Lock</span>
+                    </div>
+                    <p class="text-xs text-fg-muted mb-3">
+                      Require a 4-digit PIN to access the app. Stored locally on this device.
+                    </p>
+
+                    <Show when={pinEnabled() && !showPinSetup()}>
+                      <div class="flex items-center gap-2 mb-3">
+                        <span class="i-mdi-check-circle text-emerald-600 w-4 h-4" />
+                        <span class="text-xs text-emerald-700">PIN lock enabled</span>
+                      </div>
+                      <div class="flex gap-2">
+                        <button class="btn-win text-xs" onClick={() => setShowPinSetup(true)}>Change PIN</button>
+                        <button class="btn-win text-xs text-red-600 hover:text-red-700" onClick={handleRemovePin}>Remove PIN</button>
+                      </div>
+                    </Show>
+
+                    <Show when={!pinEnabled() && !showPinSetup()}>
+                      <button class="btn-win primary text-xs" onClick={() => setShowPinSetup(true)}>Set PIN</button>
+                    </Show>
+
+                    <Show when={showPinSetup()}>
+                      <div class="space-y-2">
+                        <div>
+                          <label class="text-[10px] text-fg-muted uppercase font-heading block mb-1">New PIN</label>
+                          <input
+                            type="password"
+                            inputmode="numeric"
+                            pattern="[0-9]*"
+                            maxLength={4}
+                            class="w-full px-3 py-2 bg-surface border border-edge-soft text-fg font-mono text-sm tracking-[0.5em] text-center"
+                            placeholder="······"
+                            value={newPin()}
+                            onInput={(e) => { setNewPin(e.currentTarget.value); setPinError('') }}
+                          />
+                        </div>
+                        <div>
+                          <label class="text-[10px] text-fg-muted uppercase font-heading block mb-1">Confirm PIN</label>
+                          <input
+                            type="password"
+                            inputmode="numeric"
+                            pattern="[0-9]*"
+                            maxLength={4}
+                            class="w-full px-3 py-2 bg-surface border border-edge-soft text-fg font-mono text-sm tracking-[0.5em] text-center"
+                            placeholder="······"
+                            value={confirmPin()}
+                            onInput={(e) => { setConfirmPin(e.currentTarget.value); setPinError('') }}
+                          />
+                        </div>
+                        <Show when={pinError()}>
+                          <p class="text-[10px] text-red-600">{pinError()}</p>
+                        </Show>
+                        <div class="flex gap-2">
+                          <button class="btn-win primary text-xs" onClick={handleSetPin}>Save PIN</button>
+                          <button class="btn-win text-xs" onClick={() => { setShowPinSetup(false); setNewPin(''); setConfirmPin(''); setPinError('') }}>Cancel</button>
+                        </div>
+                      </div>
+                    </Show>
+                  </div>
+                )
+              })()}
+
               <div class="panel-inset p-4">
                 <div class="flex items-center gap-2 mb-3">
                   <span class="i-mdi-fingerprint text-accent w-5 h-5" />
@@ -388,106 +490,11 @@ export default function ProfilePage(props: Props) {
             </div>
           </Show>
 
-          {/* Private Mode Tab */}
+          {/* Private Mode Tab — commented out until TEE server is ready
           <Show when={tab() === 'private'}>
-            <div class="space-y-4">
-              <div class="panel-inset p-4">
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="i-mdi-shield-lock text-purple-500 w-5 h-5" />
-                  <span class="text-sm text-fg font-heading font-semibold">Private TTS Mode</span>
-                </div>
-                <p class="text-xs text-fg-muted mb-3">
-                  Connect directly to a TEE (Trusted Execution Environment) server for end-to-end encrypted inference.
-                  Your text is encrypted in the browser using Noise protocol before being sent to the TEE,
-                  ensuring the server operator cannot read your data.
-                </p>
-                <div class="flex items-center gap-2 text-[10px]">
-                  <span class="i-mdi-check-circle text-emerald-600 w-3 h-3" />
-                  <span class="text-fg-muted">E2E Encrypted (Noise_NK)</span>
-                  <span class="i-mdi-check-circle text-emerald-600 w-3 h-3 ml-2" />
-                  <span class="text-fg-muted">TEE Attested (SEV-SNP/TDX)</span>
-                </div>
-              </div>
-
-              {/* Connection Form */}
-              <div class="panel-inset p-4">
-                <div class="text-[10px] text-fg-muted uppercase mb-3 font-heading">Server Configuration</div>
-                <div class="space-y-3">
-                  <div>
-                    <label class="text-[10px] text-fg-muted block mb-1 font-heading">WebSocket URL</label>
-                    <input
-                      type="text"
-                      class="w-full px-3 py-2 bg-surface border border-edge-soft text-fg font-mono text-xs"
-                      placeholder="ws://localhost:4434/ws"
-                      value={teeUrl()}
-                      onInput={(e) => {
-                        setTeeUrl(e.currentTarget.value)
-                        localStorage.setItem('tee_url', e.currentTarget.value)
-                      }}
-                    />
-                  </div>
-
-                  <Show when={teeError()}>
-                    <div class="text-xs text-red-700 bg-red-50 border border-red-200 p-2">
-                      {teeError()}
-                    </div>
-                  </Show>
-
-                  <Show when={store.tee.connected && store.tee.attestation}>
-                    <div class="bg-emerald-50 border border-emerald-200 p-3">
-                      <div class="flex items-center gap-2 text-emerald-700 text-xs mb-2">
-                        <span class="i-mdi-check-circle w-4 h-4" />
-                        Connected &amp; Verified
-                      </div>
-                      <div class="space-y-1 text-[10px]">
-                        <div class="flex justify-between">
-                          <span class="text-fg-muted">TEE Type</span>
-                          <span class="text-accent font-mono">{store.tee.attestation?.teeType}</span>
-                        </div>
-                        <div class="flex justify-between">
-                          <span class="text-fg-muted">Static Key</span>
-                          <span class="text-accent font-mono truncate ml-2" style={{ 'max-width': '200px' }}>
-                            {Array.from(store.tee.attestation?.staticKey.slice(0, 8) || []).map(b => b.toString(16).padStart(2, '0')).join('')}...
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </Show>
-
-                  <button
-                    class={`btn-win w-full py-2 ${store.tee.connected ? 'bg-red-600 text-white border-red-800 hover:bg-red-700' : 'bg-purple-600 text-white border-purple-800 hover:bg-purple-700'}`}
-                    disabled={teeConnecting()}
-                    onClick={async () => {
-                      if (store.tee.connected) {
-                        actions.disconnectTee()
-                        return
-                      }
-
-                      setTeeConnecting(true)
-                      setTeeError(null)
-                      try {
-                        await actions.connectTee(teeUrl())
-                      } catch (err) {
-                        setTeeError(err instanceof Error ? err.message : 'Connection failed')
-                      }
-                      setTeeConnecting(false)
-                    }}
-                  >
-                    <Show when={teeConnecting()} fallback={
-                      store.tee.connected ? 'Disconnect' : 'Connect to TEE'
-                    }>
-                      <span class="animate-pulse">Connecting...</span>
-                    </Show>
-                  </button>
-                </div>
-              </div>
-
-              <div class="text-[10px] text-fg-muted">
-                <span class="i-mdi-information-outline w-3 h-3 inline-block mr-1" />
-                Private mode requires a running kokoro-tee server. In insecure mode, attestation is simulated.
-              </div>
-            </div>
+            ...
           </Show>
+          */}
         </div>
       </div>
     </div>

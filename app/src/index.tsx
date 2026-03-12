@@ -21,6 +21,9 @@ render(
   root
 )
 
-// Hide shell, show app
-root.style.display = 'block'
-shell?.remove()
+// Show app, hide shell
+// If PIN locked, the PIN gate in index.html handles reveal
+if (!shell || !(window as any).__sonotxt_locked) {
+  root.style.display = 'block'
+  shell?.remove()
+}

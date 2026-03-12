@@ -26,6 +26,7 @@
       background:#fff;
       border:2px solid #881337;
       box-shadow:0.25rem 0.25rem 0 0 #881337;
+      z-index:9999;
     }
 
     .shell-titlebar{
@@ -44,10 +45,7 @@
     .shell-icon{color:#e11d48;font-size:16px}
     .shell-title{flex:1;text-align:center;color:#881337}
 
-    .shell-content{
-      padding:24px 16px;
-      text-align:center;
-    }
+    .shell-content{padding:24px 16px;text-align:center}
 
     .shell-status{
       color:#e11d48;
@@ -56,36 +54,27 @@
       font-size:13px;
       letter-spacing:1px;
       text-transform:uppercase;
-      animation:blink 1.2s ease-in-out infinite;
     }
 
-    .shell-bars{
-      display:flex;
-      align-items:flex-end;
-      justify-content:center;
-      gap:4px;
-      height:32px;
-      margin-top:16px;
-    }
-
-    .shell-bar{
-      width:6px;
-      border-radius:2px;
-      background:#e11d48;
-      animation:bar-pulse 0.5s ease-in-out infinite;
-    }
-
-    @keyframes blink{0%,100%{opacity:0.4}50%{opacity:1}}
+    .shell-bars{display:flex;align-items:flex-end;justify-content:center;gap:4px;height:32px;margin-top:16px}
+    .shell-bar{width:6px;border-radius:2px;background:#e11d48;animation:bar-pulse .5s ease-in-out infinite}
     @keyframes bar-pulse{0%,100%{height:30%}50%{height:100%}}
 
-    .shell-footer{
-      padding:10px;
-      text-align:center;
-      border-top:1px solid #fecdd3;
-      font-size:10px;
-      color:#a1a1aa;
-      letter-spacing:0.5px;
-    }
+    .shell-footer{padding:10px;text-align:center;border-top:1px solid #fecdd3;font-size:10px;color:#a1a1aa;letter-spacing:.5px}
+
+    /* PIN pad */
+    .pin-dots{display:flex;justify-content:center;gap:10px;margin:16px 0}
+    .pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid #881337;background:transparent;transition:all .15s}
+    .pin-dot.filled{background:#e11d48;border-color:#e11d48;transform:scale(1.1)}
+    .pin-dot.error{background:#dc2626;border-color:#dc2626}
+    .pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:220px;margin:0 auto}
+    .pin-key{height:48px;border:1px solid #fecdd3;background:#fff;font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:600;color:#27272a;cursor:pointer;border-radius:4px;transition:all .1s}
+    .pin-key:hover{background:#ffe4e6}
+    .pin-key:active{background:#e11d48;color:#fff}
+    .pin-key.fn{font-size:12px;color:#a1a1aa;border-color:transparent;background:transparent}
+    .pin-key.fn:hover{color:#e11d48;background:transparent}
+    .pin-error{color:#dc2626;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-top:8px;min-height:18px}
+    @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
 
     #root{display:none}
   </style>
@@ -98,24 +87,122 @@
       <span class="shell-icon">♫</span>
       <span class="shell-title">sonotxt</span>
     </div>
-
-    <div class="shell-content">
-      <div class="shell-status">LOADING...</div>
-      <div class="shell-bars">
-        <div class="shell-bar" style="animation-delay:0s"></div>
-        <div class="shell-bar" style="animation-delay:0.08s"></div>
-        <div class="shell-bar" style="animation-delay:0.16s"></div>
-        <div class="shell-bar" style="animation-delay:0.24s"></div>
-        <div class="shell-bar" style="animation-delay:0.32s"></div>
-        <div class="shell-bar" style="animation-delay:0.4s"></div>
-        <div class="shell-bar" style="animation-delay:0.48s"></div>
-        <div class="shell-bar" style="animation-delay:0.56s"></div>
-      </div>
-    </div>
-
+    <div class="shell-content" id="shell-content"></div>
     <div class="shell-footer">ROTKO NETWORKS</div>
   </div>
 
+  <script>
+    // Site access gate — PIN is 1337
+    // Once correct, sessionStorage remembers for the tab lifetime
+    (function(){
+      var PIN_LEN = 4;
+      var UNLOCK_KEY = 'sonotxt_unlocked';
+      var content = document.getElementById('shell-content');
+
+      if (sessionStorage.getItem(UNLOCK_KEY)) {
+        // Already unlocked — show loading, app JS will replace shell
+        showLoading();
+        return;
+      }
+
+      // Show PIN pad
+      showPinPad();
+
+      function showLoading() {
+        content.innerHTML =
+          '<div class="shell-status" style="animation:blink 1.2s ease-in-out infinite">LOADING...</div>' +
+          '<div class="shell-bars">' +
+          [0,.08,.16,.24,.32,.4,.48,.56].map(function(d){return '<div class="shell-bar" style="animation-delay:'+d+'s"></div>'}).join('') +
+          '</div>';
+      }
+
+      function showPinPad() {
+        // Block index.tsx from removing the shell
+        window.__sonotxt_locked = true;
+
+        var pin = '';
+        content.innerHTML =
+          '<div class="shell-status">ENTER PIN</div>' +
+          '<div class="pin-dots" id="pin-dots"></div>' +
+          '<div class="pin-error" id="pin-error"></div>' +
+          '<div class="pin-grid" id="pin-grid"></div>';
+
+        var dotsEl = document.getElementById('pin-dots');
+        var errorEl = document.getElementById('pin-error');
+        var gridEl = document.getElementById('pin-grid');
+
+        for (var i = 0; i < PIN_LEN; i++) {
+          var d = document.createElement('div');
+          d.className = 'pin-dot';
+          dotsEl.appendChild(d);
+        }
+
+        ['1','2','3','4','5','6','7','8','9','','0','⌫'].forEach(function(k) {
+          if (!k) { gridEl.appendChild(document.createElement('div')); return; }
+          var btn = document.createElement('button');
+          btn.className = k === '⌫' ? 'pin-key fn' : 'pin-key';
+          btn.textContent = k;
+          btn.onclick = function() { pressKey(k); };
+          gridEl.appendChild(btn);
+        });
+
+        function pressKey(k) {
+          if (k === '⌫') { pin = pin.slice(0,-1); updateDots(); errorEl.textContent=''; return; }
+          if (pin.length >= PIN_LEN) return;
+          pin += k;
+          updateDots();
+          errorEl.textContent = '';
+          if (pin.length === PIN_LEN) verify();
+        }
+
+        function verify() {
+          crypto.subtle.digest('SHA-256',
+            new TextEncoder().encode('sonotxt-pin-v1:' + pin)
+          ).then(function(buf) {
+            // Hardcoded expected hash for PIN 1337
+            return crypto.subtle.digest('SHA-256',
+              new TextEncoder().encode('sonotxt-pin-v1:1337')
+            ).then(function(expected) {
+              var h = hex(buf), e = hex(expected);
+              if (h === e) {
+                sessionStorage.setItem(UNLOCK_KEY, '1');
+                window.__sonotxt_locked = false;
+                // Reveal app
+                document.getElementById('shell').remove();
+                document.getElementById('root').style.display = 'block';
+              } else {
+                errorEl.textContent = 'WRONG PIN';
+                dotsEl.style.animation = 'shake 0.4s ease-in-out';
+                dotsEl.querySelectorAll('.pin-dot').forEach(function(d){d.classList.add('error')});
+                setTimeout(function(){
+                  pin = '';
+                  dotsEl.style.animation = '';
+                  updateDots();
+                  dotsEl.querySelectorAll('.pin-dot').forEach(function(d){d.classList.remove('error')});
+                }, 500);
+              }
+            });
+          });
+        }
+
+        function hex(buf) {
+          return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0')}).join('');
+        }
+
+        function updateDots() {
+          dotsEl.querySelectorAll('.pin-dot').forEach(function(d,i){
+            d.classList.toggle('filled', i < pin.length);
+          });
+        }
+
+        document.addEventListener('keydown', function handler(e) {
+          if (!window.__sonotxt_locked) { document.removeEventListener('keydown',handler); return; }
+          if (e.key >= '0' && e.key <= '9') pressKey(e.key);
+          else if (e.key === 'Backspace') pressKey('⌫');
+        });
+      }
+    })();
+  </script>
   <script type="module" src="/src/index.tsx"></script>
 </body>
 </html>
