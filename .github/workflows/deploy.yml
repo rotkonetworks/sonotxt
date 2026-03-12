@@ -38,11 +38,12 @@ jobs:
       - name: Deploy app
         run: |
           rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" app/dist/ deploy@www.rotko.net:/tmp/sonotxt-app/
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" landing/ deploy@www.rotko.net:/tmp/sonotxt-landing/
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
 
           mkdir -p ~/sonotxt/landing ~/sonotxt/dashboard
-          rsync -a --delete /tmp/sonotxt-app/ ~/sonotxt/landing/
+          rsync -a --delete /tmp/sonotxt-landing/ ~/sonotxt/landing/
           rsync -a --delete /tmp/sonotxt-app/ ~/sonotxt/dashboard/
 
           podman stop sonotxt-landing 2>/dev/null || true
