@@ -111,36 +111,34 @@ jobs:
       - name: Deploy API
         run: |
           scp -i ~/.ssh/id_deploy rust/target/release/sonotxt deploy@www.rotko.net:/tmp/sonotxt-api
-          ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
+          ssh -i ~/.ssh/id_deploy deploy@www.rotko.net 'bash -s' <<'DEPLOY'
           set -e
-
           mkdir -p ~/sonotxt/api
 
-          # Stop existing process
-          if [ -f ~/sonotxt/api/sonotxt.pid ]; then
-            kill "$(cat ~/sonotxt/api/sonotxt.pid)" 2>/dev/null || true
-            sleep 1
-          fi
+          # Kill ALL sonotxt processes (nohup or systemd)
+          pkill -f "sonotxt/api/sonotxt" 2>/dev/null || true
+          pkill -f "/srv/sonotxt/api/sonotxt" 2>/dev/null || true
+          sleep 2
 
           # Install binary
           mv /tmp/sonotxt-api ~/sonotxt/api/sonotxt
           chmod +x ~/sonotxt/api/sonotxt
 
-          # Write env defaults (secrets in .env override these)
-          cat > ~/sonotxt/api/env.defaults <<'ENVFILE'
-          RUST_LOG=info
-          DATABASE_URL=postgres://sonotxt:sonotxt@localhost/sonotxt
-          SERVER_HOST=127.0.0.1
-          SERVER_PORT=8102
-          APP_URL=https://app.sonotxt.com
-          AUDIO_PUBLIC_URL=https://audio.sonotxt.com/sonotxt-audio
-          MINIO_ENDPOINT=http://localhost:9000
-          S3_BUCKET=sonotxt-audio
-          ASSETHUB_RPC=wss://polkadot-asset-hub-rpc.polkadot.io
-          ASSETHUB_LISTENER_ENABLED=true
-          ENVFILE
+          # Write env defaults
+          printf '%s\n' \
+            'RUST_LOG=info' \
+            'DATABASE_URL=postgres://sonotxt:sonotxt@localhost/sonotxt' \
+            'SERVER_HOST=127.0.0.1' \
+            'SERVER_PORT=8102' \
+            'APP_URL=https://app.sonotxt.com' \
+            'AUDIO_PUBLIC_URL=https://audio.sonotxt.com/sonotxt-audio' \
+            'MINIO_ENDPOINT=http://localhost:9000' \
+            'S3_BUCKET=sonotxt-audio' \
+            'ASSETHUB_RPC=wss://polkadot-asset-hub-rpc.polkadot.io' \
+            'ASSETHUB_LISTENER_ENABLED=true' \
+            > ~/sonotxt/api/env.defaults
 
-          # Start API in background
+          # Start API
           cd ~/sonotxt/api
           set -a
           . ./env.defaults
@@ -148,10 +146,11 @@ jobs:
           set +a
           nohup ./sonotxt > api.log 2>&1 &
           echo $! > sonotxt.pid
+          disown
 
-          sleep 2
+          sleep 3
           curl -sf http://127.0.0.1:8102/api/voices > /dev/null && echo "API deploy OK"
-          EOF
+          DEPLOY
 
   # CDN (cdn.sonotxt.com) - embed.js + static files
   deploy-cdn:
