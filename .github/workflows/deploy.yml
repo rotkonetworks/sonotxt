@@ -72,6 +72,7 @@ jobs:
   # API server (api.sonotxt.com) - Rust binary
   deploy-api:
     runs-on: ubuntu-latest
+    environment: testnet  # switch to 'mainnet' for production
     steps:
       - uses: actions/checkout@v4
         with:
@@ -137,6 +138,9 @@ jobs:
             'SONO_RPC_URL=${{ secrets.SONO_RPC_URL }}' \
             'SONO_CONTRACT=${{ secrets.SONO_CONTRACT }}' \
             'SONO_SERVICE_KEY=${{ secrets.SONO_SERVICE_KEY }}' \
+            'SONO_PRICE_USD=0.01' \
+            'SONO_FIAT_PREMIUM=0.10' \
+            'SONO_PRICE_INTERVAL=300' \
             > ~/sonotxt/api/env.defaults
 
           # Restart API via systemd
