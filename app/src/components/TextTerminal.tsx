@@ -94,7 +94,7 @@ export default function TextTerminal(props: Props) {
     const target = LANGUAGES.find(l => l.code === targetLang())
     const targetName = target?.name || targetLang()
     setStatus('Translating...')
-    const res = await fetch(`${LLM_URL}/chat_sentences`, {
+    const res = await fetch(`${LLM_URL}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -106,7 +106,7 @@ export default function TextTerminal(props: Props) {
     })
     if (!res.ok) throw new Error(`Translation error ${res.status}`)
     const data = await res.json()
-    return data.full_response
+    return data.response ?? data.full_response
   }
 
   async function generate() {
@@ -138,19 +138,27 @@ export default function TextTerminal(props: Props) {
       const ttsLang = translateEnabled() ? targetLang() : 'auto'
 
       for (let i = 0; i < sentences.length; i++) {
+        const s = sentences[i].trim()
+        if (!s) continue
         setStatus(`Synthesizing ${i + 1}/${sentences.length}...`)
         const res = await fetch(`${SPEECH_URL}/synthesize`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: sentences[i].trim(),
+            text: s,
             speaker: speaker(),
             language: ttsLang,
           }),
         })
         if (!res.ok) throw new Error(`TTS error ${res.status}`)
-        audioBuffers.push(await res.arrayBuffer())
+        const data = await res.json()
+        const binary = atob(data.audio_base64)
+        const bytes = new Uint8Array(binary.length)
+        for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j)
+        audioBuffers.push(bytes.buffer)
       }
+
+      if (!audioBuffers.length) throw new Error('No audio generated')
 
       const totalLen = audioBuffers.reduce((sum, b) => sum + b.byteLength, 0)
       const combined = new Uint8Array(totalLen)
