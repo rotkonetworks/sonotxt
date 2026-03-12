@@ -38,30 +38,30 @@ jobs:
       - name: Deploy app
         run: |
           rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" app/dist/ deploy@www.rotko.net:/tmp/sonotxt-app/
-          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" landing/ deploy@www.rotko.net:/tmp/sonotxt-landing/
           ssh -i ~/.ssh/id_deploy deploy@www.rotko.net bash -s <<'EOF'
           set -e
 
-          mkdir -p ~/sonotxt/landing ~/sonotxt/dashboard
-          rsync -a --delete /tmp/sonotxt-landing/ ~/sonotxt/landing/
-          rsync -a --delete /tmp/sonotxt-app/ ~/sonotxt/dashboard/
+          mkdir -p ~/sonotxt/app
+          rsync -a --delete /tmp/sonotxt-app/ ~/sonotxt/app/
 
+          # sonotxt.com (port 8100) — serves the app
           podman stop sonotxt-landing 2>/dev/null || true
           podman rm sonotxt-landing 2>/dev/null || true
           podman run -d \
             --name sonotxt-landing \
             --restart=always \
             -p 127.0.0.1:8100:80 \
-            -v ~/sonotxt/landing:/usr/share/nginx/html:ro \
+            -v ~/sonotxt/app:/usr/share/nginx/html:ro \
             docker.io/library/nginx:alpine
 
+          # app.sonotxt.com (port 8101) — same app
           podman stop sonotxt-dashboard 2>/dev/null || true
           podman rm sonotxt-dashboard 2>/dev/null || true
           podman run -d \
             --name sonotxt-dashboard \
             --restart=always \
             -p 127.0.0.1:8101:80 \
-            -v ~/sonotxt/dashboard:/usr/share/nginx/html:ro \
+            -v ~/sonotxt/app:/usr/share/nginx/html:ro \
             docker.io/library/nginx:alpine
 
           sleep 2
