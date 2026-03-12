@@ -187,15 +187,16 @@ export default function VoiceTerminal(props: Props) {
     setPhase('llm')
     const t1 = performance.now()
     const sys = detectedLanguage ? [{ role: 'system', content: `Always respond in ${detectedLanguage}.` }] : []
+    const validMessages = [...sys, ...chatHistory].filter(m => m.role && m.content)
     const lr = await fetch(`${API}/api/voice/chat`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [...sys, ...chatHistory] }),
+      body: JSON.stringify({ messages: validMessages }),
     })
     if (!lr.ok) throw new Error(`LLM ${lr.status}`)
     const llm = await lr.json()
     const llmMs = Math.round(performance.now() - t1)
-    const fullResponse = llm.response || llm.full_response
-    chatHistory.push({ role: 'assistant', content: fullResponse })
+    const fullResponse = llm.response ?? llm.full_response ?? ''
+    if (fullResponse) chatHistory.push({ role: 'assistant', content: fullResponse })
 
     const { audioUrl, ttsMs } = await speakAndCapture(llm.sentences, detectedLanguage || 'auto')
     addMsg('assistant', fullResponse, { audioUrl })
