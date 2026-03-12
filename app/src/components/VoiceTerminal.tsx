@@ -166,7 +166,11 @@ export default function VoiceTerminal(props: Props) {
 
       // Store user's recording audio
       const recUrl = URL.createObjectURL(blob)
-      const transcript = asr.transcript || asr.text
+      const transcript = asr.transcript ?? asr.text ?? ''
+      if (!transcript) {
+        addMsg('system', 'No speech detected')
+        return
+      }
       addMsg('user', transcript, { audioUrl: recUrl })
       chatHistory.push({ role: 'user', content: transcript })
 
@@ -232,7 +236,7 @@ export default function VoiceTerminal(props: Props) {
 
     props.onHistoryAdd?.({
       type: 'translate',
-      text: llm.full_response,
+      text: fullResponse,
       translation: userText,
       targetLang: targetLang(),
       url: audioUrl,
