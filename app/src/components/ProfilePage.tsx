@@ -1,6 +1,7 @@
 import { createSignal, createEffect, Show, For } from 'solid-js'
 import { useStore } from '../lib/store'
 import * as api from '../lib/api'
+import * as evm from '../lib/evm'
 import PasskeyAuth from './PasskeyAuth'
 import { hasPinLock, setPinLock, removePinLock } from './PinLock'
 
@@ -23,6 +24,33 @@ export default function ProfilePage(props: Props) {
   const [checkoutCurrency, setCheckoutCurrency] = createSignal('eur')
   const [checkoutLoading, setCheckoutLoading] = createSignal(false)
   const [checkoutError, setCheckoutError] = createSignal<string | null>(null)
+
+  // SONO channel
+  const [channelAmount, setChannelAmount] = createSignal('100')
+  const [channelLoading, setChannelLoading] = createSignal(false)
+  const [channelError, setChannelError] = createSignal<string | null>(null)
+
+  // Refresh SONO balance when wallet is connected
+  createEffect(() => {
+    if (store.user?.wallet_address) {
+      evm.refresh().catch(() => {})
+    }
+  })
+
+  async function handleOpenChannel() {
+    setChannelLoading(true)
+    setChannelError(null)
+    try {
+      if (evm.channelInfo()) {
+        await evm.topUp(channelAmount())
+      } else {
+        await evm.openChannel(channelAmount())
+      }
+    } catch (e: any) {
+      setChannelError(e.message || 'Transaction failed')
+    }
+    setChannelLoading(false)
+  }
 
   // TEE state — uncomment when private mode is ready
   // const [teeUrl, setTeeUrl] = createSignal(localStorage.getItem('tee_url') || 'ws://localhost:4434/ws')
@@ -116,6 +144,15 @@ export default function ProfilePage(props: Props) {
               <div class="panel-inset p-4">
                 <div class="text-[10px] text-fg-muted uppercase mb-1 font-heading">Account Balance</div>
                 <div class="text-2xl text-accent font-mono">${store.user?.balance.toFixed(2)}</div>
+                <Show when={parseFloat(evm.txtBalance()) > 0 || evm.channelInfo()}>
+                  <div class="flex items-center gap-2 mt-2 pt-2 border-t border-edge-soft">
+                    <span class="i-mdi-currency-eth w-3 h-3 text-fg-muted" />
+                    <span class="text-xs text-fg font-mono">{evm.txtBalance()} TXT</span>
+                    <Show when={evm.channelInfo()}>
+                      <span class="text-[10px] text-accent">({evm.channelInfo()!.remaining} in channel)</span>
+                    </Show>
+                  </div>
+                </Show>
                 <div class="text-[10px] text-fg-muted mt-2">
                   ~{((store.user?.balance || 0) / 0.0000016 / 1000).toFixed(0)}k chars @ $1.60/M
                 </div>
@@ -165,6 +202,92 @@ export default function ProfilePage(props: Props) {
           {/* Deposits Tab */}
           <Show when={tab() === 'deposits'}>
             <div class="space-y-4">
+              {/* SONO Payment Channel */}
+              <div class="panel-inset p-4">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="i-mdi-ethereum text-accent w-4 h-4" />
+                  <span class="text-xs text-fg font-heading font-semibold">TXT Token</span>
+                  <span class="text-[10px] text-fg-muted">Paseo Asset Hub</span>
+                </div>
+
+                <Show when={store.user} fallback={
+                  <div class="text-xs text-fg-muted text-center py-2">
+                    Log in to manage TXT tokens
+                  </div>
+                }>
+                  <div class="space-y-3">
+                    <div class="flex justify-between items-baseline">
+                      <span class="text-[10px] text-fg-muted uppercase font-heading">Balance</span>
+                      <span class="text-lg text-accent font-mono">{evm.txtBalance()} TXT</span>
+                    </div>
+
+                    {/* Channel info */}
+                    <Show when={evm.channelInfo()}>
+                      {(ch) => (
+                        <div class="bg-accent-soft border border-accent-muted p-3">
+                          <div class="text-[10px] text-accent-strong uppercase font-heading mb-2">Active Channel</div>
+                          <div class="grid grid-cols-3 gap-2 text-center">
+                            <div>
+                              <div class="text-xs text-fg font-mono">{ch().deposit}</div>
+                              <div class="text-[9px] text-fg-muted">deposited</div>
+                            </div>
+                            <div>
+                              <div class="text-xs text-fg font-mono">{ch().spent}</div>
+                              <div class="text-[9px] text-fg-muted">spent</div>
+                            </div>
+                            <div>
+                              <div class="text-xs text-accent-strong font-mono font-bold">{ch().remaining}</div>
+                              <div class="text-[9px] text-fg-muted">remaining</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </Show>
+
+                    {/* Open / Top up */}
+                    <div class="flex gap-2">
+                      <input
+                        type="number"
+                        class="flex-1 px-2 py-1.5 text-xs bg-surface border border-edge-soft text-fg font-mono"
+                        value={channelAmount()}
+                        onInput={(e) => setChannelAmount(e.currentTarget.value)}
+                        placeholder="Amount"
+                      />
+                      <button
+                        class="btn-win primary py-1.5 px-3 text-xs"
+                        disabled={channelLoading()}
+                        onClick={handleOpenChannel}
+                      >
+                        <Show when={channelLoading()} fallback={
+                          evm.channelInfo() ? 'Top Up' : 'Open Channel'
+                        }>
+                          <span class="animate-pulse">...</span>
+                        </Show>
+                      </button>
+                    </div>
+
+                    <Show when={channelError()}>
+                      <div class="text-xs text-red-700 bg-red-50 border border-red-200 p-2">
+                        {channelError()}
+                      </div>
+                    </Show>
+
+                    <Show when={!evm.channelInfo()}>
+                      <div class="text-[10px] text-fg-faint">
+                        Open a payment channel to start using sonotxt with TXT tokens.
+                        Only 2 on-chain transactions: open and close.
+                      </div>
+                    </Show>
+                  </div>
+                </Show>
+
+                <Show when={evm.txError()}>
+                  <div class="text-xs text-red-700 bg-red-50 border border-red-200 p-2 mt-2">
+                    {evm.txError()}
+                  </div>
+                </Show>
+              </div>
+
               {/* Card Payment */}
               <div class="panel-inset p-4">
                 <div class="flex items-center gap-2 mb-3">

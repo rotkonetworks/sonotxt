@@ -1,11 +1,16 @@
 // TXT utility token + payment channel contract interaction via viem
-// Deployed on Paseo Asset Hub (pallet-revive, eth-compatible RPC)
 //
 // Two-token model:
-//   SONO (asset 50000445) — governance, native pallet-assets token
-//     precompile: 0x02faf23d00000000000000000000000001200000
+//   SONO — governance, native pallet-assets token (ERC20 precompile)
 //   TXT — utility token (this contract), used for payment channels
-//     accepts: DOT, USDC, USDT, SONO
+//
+// Network configured via env vars:
+//   VITE_CHAIN_ID          — EVM chain ID (default: 420420417 = Paseo Asset Hub)
+//   VITE_CHAIN_NAME        — display name
+//   VITE_ETH_RPC           — eth-compatible RPC endpoint
+//   VITE_SUBSTRATE_RPC     — Substrate WS RPC (for PAPI/Revive.call)
+//   VITE_CONTRACT_ADDRESS  — TXT proxy contract
+//   VITE_SERVICE_ADDRESS   — sonotxt service address for payment channels
 
 import {
   createPublicClient,
@@ -19,18 +24,29 @@ import {
 } from 'viem'
 import { defineChain } from 'viem/utils'
 
-export const paseoAssetHub = defineChain({
-  id: 420420417,
-  name: 'Paseo Asset Hub',
-  nativeCurrency: { name: 'PAS', symbol: 'PAS', decimals: 18 },
+const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || '420420417')
+const CHAIN_NAME = import.meta.env.VITE_CHAIN_NAME || 'Paseo Asset Hub'
+const ETH_RPC = import.meta.env.VITE_ETH_RPC || 'https://eth-asset-hub-paseo.dotters.network'
+const IS_TESTNET = CHAIN_ID === 420420417
+
+export const SUBSTRATE_RPC = import.meta.env.VITE_SUBSTRATE_RPC || 'wss://asset-hub-paseo.dotters.network/'
+
+const nativeCurrency = IS_TESTNET
+  ? { name: 'PAS', symbol: 'PAS', decimals: 18 }
+  : { name: 'DOT', symbol: 'DOT', decimals: 18 }
+
+export const assetHubChain = defineChain({
+  id: CHAIN_ID,
+  name: CHAIN_NAME,
+  nativeCurrency,
   rpcUrls: {
-    default: { http: ['https://eth-asset-hub-paseo.dotters.network'] },
+    default: { http: [ETH_RPC] },
   },
-  testnet: true,
+  testnet: IS_TESTNET,
 })
 
-// Contract address — updated after proxy deployment
-const CONTRACT_ADDRESS: Address = '0x1b3ece804e4414e3bce3ca9a006656b67d07fea1'
+// Contract address — configurable per network
+const CONTRACT_ADDRESS: Address = (import.meta.env.VITE_CONTRACT_ADDRESS || '0x1b3ece804e4414e3bce3ca9a006656b67d07fea1') as Address
 
 const TXT_DECIMALS = 10
 
@@ -103,7 +119,7 @@ const TXT_ABI = [
 
 export function getPublicClient() {
   return createPublicClient({
-    chain: paseoAssetHub,
+    chain: assetHubChain,
     transport: http(),
   })
 }
@@ -113,7 +129,7 @@ export function getWalletClient(account: Address) {
   if (!provider) throw new Error('No Ethereum provider found')
   return createWalletClient({
     account,
-    chain: paseoAssetHub,
+    chain: assetHubChain,
     transport: custom(provider),
   })
 }
