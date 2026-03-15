@@ -9,6 +9,8 @@ lerna-debug.log*
 
 node_modules
 dist
+public/live2d/
+dump.rdb
 dist-ssr
 *.local
 .env

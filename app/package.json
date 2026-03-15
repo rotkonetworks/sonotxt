@@ -10,12 +10,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.32",
+    "@noble/ciphers": "^2.1.1",
     "@noble/curves": "^2.0.1",
     "@noble/ed25519": "^3.0.0",
     "@noble/hashes": "^2.0.1",
     "@polkadot-api/descriptors": "file:.papi/descriptors",
     "@polkadot-api/pjs-signer": "^0.6.19",
     "@talismn/connect-wallets": "^1.2.8",
+    "pixi-live2d-display": "0.5.0-beta",
+    "pixi.js": "^7.4.3",
     "polkadot-api": "^1.23.3",
     "solid-js": "^1.9.10",
     "viem": "^2.47.2"
