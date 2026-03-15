@@ -8,7 +8,7 @@
 // Usage:
 //   DEPLOYER_KEY=0x... PROXY=0x... npx tsx contracts/upgrade.ts
 
-import { createWalletClient, createPublicClient, http, defineChain, formatUnits } from 'viem'
+import { createWalletClient, createPublicClient, http, defineChain, formatUnits, encodeFunctionData } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { readFileSync } from 'fs'
 import { join } from 'path'
@@ -88,31 +88,50 @@ async function main() {
   const newImpl = implReceipt.contractAddress!
   console.log(`   New impl: ${newImpl}`)
 
-  // 2. Upgrade proxy
-  console.log('\n2. Upgrading proxy...')
+  // 2. Upgrade proxy with initializeV2 call
+  //    Treasury = deployer address (can change later via setTreasury)
+  //    SONO token = pallet-assets precompile for asset 50000445
+  const SONO_PRECOMPILE = '0x02faf23d00000000000000000000000001200000' as `0x${string}`
+  const treasuryAddr = process.env.TREASURY || account.address
+
+  const initV2Data = encodeFunctionData({
+    abi: implAbi,
+    functionName: 'initializeV2',
+    args: [treasuryAddr, SONO_PRECOMPILE],
+  })
+
+  console.log('\n2. Upgrading proxy + calling initializeV2...')
+  console.log(`   Treasury: ${treasuryAddr}`)
+  console.log(`   SONO token: ${SONO_PRECOMPILE}`)
   const upgradeHash = await walletClient.writeContract({
     address: proxy,
     abi: PROXY_ABI,
     functionName: 'upgradeToAndCall',
-    args: [newImpl, '0x'],
+    args: [newImpl, initV2Data],
   })
   await publicClient.waitForTransactionReceipt({ hash: upgradeHash })
   console.log(`   Tx: ${upgradeHash}`)
 
   // 3. Verify
   const newImplCheck = await publicClient.readContract({ address: proxy, abi: PROXY_ABI, functionName: 'implementation' })
-  const [supplyAfter, ownerBalAfter] = await Promise.all([
+  const [supplyAfter, ownerBalAfter, burnBps, totalBurned, treasuryCheck] = await Promise.all([
     publicClient.readContract({ address: proxy, abi: implAbi, functionName: 'totalSupply' }),
     publicClient.readContract({ address: proxy, abi: implAbi, functionName: 'balanceOf', args: [account.address] }),
-  ]) as [bigint, bigint]
+    publicClient.readContract({ address: proxy, abi: implAbi, functionName: 'burnBps' }),
+    publicClient.readContract({ address: proxy, abi: implAbi, functionName: 'totalBurned' }),
+    publicClient.readContract({ address: proxy, abi: implAbi, functionName: 'treasury' }),
+  ]) as [bigint, bigint, number, bigint, string]
 
   console.log(`\nPost-upgrade:`)
   console.log(`  Implementation: ${newImplCheck}`)
-  console.log(`  Total supply: ${formatUnits(supplyAfter, 10)} SONO`)
-  console.log(`  Owner balance: ${formatUnits(ownerBalAfter, 10)} SONO`)
+  console.log(`  Total supply: ${formatUnits(supplyAfter, 10)} TXT`)
+  console.log(`  Owner balance: ${formatUnits(ownerBalAfter, 10)} TXT`)
+  console.log(`  Burn bps: ${burnBps} (${Number(burnBps) / 100}%)`)
+  console.log(`  Total burned: ${formatUnits(totalBurned, 10)} TXT`)
+  console.log(`  Treasury: ${treasuryCheck}`)
 
   if (supply === supplyAfter && ownerBal === ownerBalAfter) {
-    console.log('\n✓ Upgrade successful! State preserved.')
+    console.log('\n✓ Upgrade successful! State preserved, V2 initialized.')
   } else {
     console.log('\n⚠ WARNING: State mismatch! Check storage layout compatibility.')
   }

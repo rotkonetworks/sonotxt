@@ -152,9 +152,9 @@ export async function getChannel(user: Address, service: Address) {
   return {
     deposit: formatUnits(deposit, TXT_DECIMALS),
     spent: formatUnits(spent, TXT_DECIMALS),
-    remaining: formatUnits(deposit - spent, TXT_DECIMALS),
-    nonce: Number(nonce),
-    expiresAt: Number(expiresAt),
+    remaining: formatUnits(spent > deposit ? 0n : deposit - spent, TXT_DECIMALS),
+    nonce,
+    expiresAt,
     isOpen: deposit > 0n,
     isClosing: expiresAt > 0n,
   }

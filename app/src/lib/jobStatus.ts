@@ -24,14 +24,25 @@ export function watchJobStatus(
   let ws: WebSocket | null = null
   let pollTimeout: number | null = null
 
-  // Try WebSocket first
-  const wsUrl = API.replace(/^http/, 'ws') + `/ws/job/${jobId}`
+  // Try WebSocket first, with timeout fallback
+  const wsUrl = API.replace(/^http/, 'ws') + `/ws/job/${encodeURIComponent(jobId)}`
+  let wsConnected = false
+  let wsTimeout: ReturnType<typeof setTimeout> | null = null
 
   try {
     ws = new WebSocket(wsUrl)
 
+    // If WS doesn't open within 5s, fall back to polling
+    wsTimeout = setTimeout(() => {
+      if (!wsConnected && !cancelled) {
+        ws?.close()
+        startPolling()
+      }
+    }, 5000)
+
     ws.onopen = () => {
-      console.log('[WS] Connected for job:', jobId)
+      wsConnected = true
+      if (wsTimeout) clearTimeout(wsTimeout)
     }
 
     ws.onmessage = (event) => {
@@ -49,17 +60,15 @@ export function watchJobStatus(
       }
     }
 
-    ws.onerror = (e) => {
-      console.warn('[WS] Error, falling back to polling:', e)
+    ws.onerror = () => {
+      if (wsTimeout) clearTimeout(wsTimeout)
       ws?.close()
-      if (!cancelled) startPolling()
+      if (!cancelled && !wsConnected) startPolling()
     }
 
-    ws.onclose = () => {
-      console.log('[WS] Closed')
-    }
-  } catch (e) {
-    console.warn('[WS] Failed to connect, using polling')
+    ws.onclose = () => {}
+  } catch {
+    if (wsTimeout) clearTimeout(wsTimeout)
     startPolling()
   }
 
@@ -70,7 +79,7 @@ export function watchJobStatus(
       if (cancelled) return
 
       try {
-        const res = await fetch(`${API}/api/status?job_id=${jobId}`)
+        const res = await fetch(`${API}/api/status?job_id=${encodeURIComponent(jobId)}`)
         if (!res.ok) throw new Error('Status fetch failed')
 
         const data = await res.json()
@@ -120,12 +129,25 @@ export function watchJobStatus(
     }
 
     // API returns { status: "Complete", url: ... }
-    return data
+    if (typeof data.status === 'string') {
+      return {
+        status: data.status,
+        url: data.url,
+        duration_seconds: data.duration_seconds,
+        reason: data.reason,
+        progress: data.progress,
+        estimated_seconds: data.estimated_seconds,
+        elapsed_seconds: data.elapsed_seconds,
+      }
+    }
+
+    return { status: 'Unknown' }
   }
 
   // Cleanup function
   return () => {
     cancelled = true
+    if (wsTimeout) clearTimeout(wsTimeout)
     ws?.close()
     if (pollTimeout) clearTimeout(pollTimeout)
   }

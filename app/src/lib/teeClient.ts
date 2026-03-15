@@ -119,7 +119,7 @@ export class TeeClient {
 
     const view = new DataView(data.buffer, data.byteOffset)
     const len = view.getUint32(0, true)
-    if (data.length < 4 + len) return
+    if (len > 10_000_000 || data.length < 4 + len) return
 
     const jsonBytes = data.slice(4, 4 + len)
     const json = new TextDecoder().decode(jsonBytes)
@@ -127,8 +127,8 @@ export class TeeClient {
     try {
       const msg: Message = JSON.parse(json)
       this.handleMessage(msg)
-    } catch (err) {
-      console.error('failed to parse message:', err, json)
+    } catch {
+      // ignore malformed messages
     }
   }
 
@@ -191,12 +191,14 @@ export class TeeClient {
     const toHash = concat(bundle.quote, bundle.staticKey)
     const expected = sha256(toHash)
 
-    let match = true
-    for (let i = 0; i < 32; i++) {
-      if (bundle.bindingSig[i] !== expected[i]) match = false
+    // constant-time comparison to prevent timing oracle
+    let diff = bundle.bindingSig.length ^ expected.length
+    const len = Math.min(bundle.bindingSig.length, expected.length)
+    for (let i = 0; i < len; i++) {
+      diff |= bundle.bindingSig[i] ^ expected[i]
     }
 
-    if (!match) {
+    if (diff !== 0) {
       throw new Error('attestation binding signature mismatch')
     }
 
@@ -224,11 +226,11 @@ export class TeeClient {
     await this.noise.complete(new Uint8Array(response.handshake))
   }
 
-  private async handleStreamChunk(ciphertext: number[]): Promise<void> {
+  private handleStreamChunk(ciphertext: number[]): void {
     if (!this.noise || !this.streamCallback) return
 
     try {
-      const plaintext = await this.noise.decrypt(new Uint8Array(ciphertext))
+      const plaintext = this.noise.decrypt(new Uint8Array(ciphertext))
       const text = new TextDecoder().decode(plaintext)
       const chunk = JSON.parse(text) as {
         request_id: number[]
@@ -244,8 +246,13 @@ export class TeeClient {
         isFinal: chunk.is_final,
         error: chunk.error,
       })
-    } catch (err) {
-      console.error('stream chunk error:', err)
+    } catch {
+      this.streamCallback({
+        sequence: -1,
+        audio: new Uint8Array(0),
+        isFinal: false,
+        error: 'decryption failed',
+      })
     }
   }
 
@@ -275,7 +282,7 @@ export class TeeClient {
 
     // Encrypt request
     const plaintext = new TextEncoder().encode(JSON.stringify(request))
-    const ciphertext = await this.noise.encrypt(plaintext)
+    const ciphertext = this.noise.encrypt(plaintext)
 
     this.sendMessage({ EncryptedStreamRequest: Array.from(ciphertext) })
   }

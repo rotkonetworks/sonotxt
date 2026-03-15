@@ -31,6 +31,12 @@ export interface PublishResponse {
   ipfs_cid: string | null
 }
 
+// Validate item IDs to prevent path injection from corrupted localStorage
+function validateItemId(id: string): string {
+  if (id.length > 256 || !/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error('Invalid vault item ID')
+  return id
+}
+
 // Encrypt and upload audio to vault
 export async function uploadEncrypted(
   token: string,
@@ -74,18 +80,22 @@ export async function downloadDecrypted(
   prfKey: Uint8Array,
   itemId: string
 ): Promise<ArrayBuffer> {
-  const response = await fetch(`${API}/vault/${itemId}`, {
+  const response = await fetch(`${API}/vault/${validateItemId(itemId)}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
   })
 
   if (!response.ok) {
-    throw new Error('Download failed')
+    throw new Error(`Download failed (${response.status})`)
   }
 
   const encrypted = await response.arrayBuffer()
-  return decryptAudioWithKey(prfKey, new Uint8Array(encrypted))
+  try {
+    return await decryptAudioWithKey(prfKey, new Uint8Array(encrypted))
+  } catch {
+    throw new Error('Decryption failed — wrong key or corrupted data')
+  }
 }
 
 // List vault items
@@ -105,7 +115,7 @@ export async function listVaultItems(token: string): Promise<VaultListResponse> 
 
 // Delete vault item
 export async function deleteVaultItem(token: string, itemId: string): Promise<void> {
-  const response = await fetch(`${API}/vault/${itemId}`, {
+  const response = await fetch(`${API}/vault/${validateItemId(itemId)}`, {
     method: 'DELETE',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -137,7 +147,7 @@ export async function publishVaultItem(
     body = { storage }
   }
 
-  const response = await fetch(`${API}/vault/${itemId}/publish`, {
+  const response = await fetch(`${API}/vault/${validateItemId(itemId)}/publish`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -183,6 +193,7 @@ async function encryptAudioWithKey(key: Uint8Array, plaintext: Uint8Array): Prom
 
 // Internal: decrypt audio with AES-GCM using PRF key
 async function decryptAudioWithKey(key: Uint8Array, encrypted: Uint8Array): Promise<ArrayBuffer> {
+  if (encrypted.length < 28) throw new Error('encrypted data too short') // 12 IV + 16 auth tag minimum
   const iv = new Uint8Array(encrypted.slice(0, 12))
   const ciphertext = new Uint8Array(encrypted.slice(12))
 

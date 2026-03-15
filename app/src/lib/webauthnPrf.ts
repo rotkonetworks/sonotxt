@@ -182,6 +182,7 @@ export async function decryptWithPrfKey(
   encrypted: string
 ): Promise<string> {
   const combined = base64ToArrayBuffer(encrypted)
+  if (combined.length < 28) throw new Error('ciphertext too short') // 12 IV + 16 auth tag minimum
   const iv = combined.slice(0, 12)
   const ciphertext = combined.slice(12)
 
