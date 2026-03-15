@@ -47,7 +47,7 @@ async function request<T>(
 export interface TtsRequest {
   text: string
   voice: string
-  engine?: string // "kokoro" | "vibevoice" | "vibevoice-streaming"
+  engine?: string // "qwen" | "vibevoice" | "vibevoice-streaming"
 }
 
 export interface TtsResponse {
@@ -101,6 +101,7 @@ export interface User {
   email?: string
   wallet_address?: string
   balance: number
+  avatar?: string
 }
 
 export interface AuthResponse {
@@ -110,6 +111,7 @@ export interface AuthResponse {
   wallet_address?: string
   balance: number
   token?: string
+  avatar?: string
 }
 
 export async function checkSession(token: string): Promise<AuthResponse> {
@@ -169,6 +171,17 @@ export async function verifyMagicLink(token: string): Promise<AuthResponse> {
   return request('/api/auth/magic-link/verify', {
     method: 'POST',
     body: JSON.stringify({ token }),
+  })
+}
+
+export async function updateProfile(
+  token: string,
+  updates: { avatar?: string | null }
+): Promise<{ status: string }> {
+  return request('/api/auth/profile', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(updates),
   })
 }
 
@@ -257,4 +270,85 @@ export async function listDeposits(token: string): Promise<DepositEntry[]> {
 // Download helper - returns URL for downloading audio via API proxy
 export function getDownloadUrl(jobId: string): string {
   return `${API}/api/download/${jobId}`
+}
+
+// Contacts
+export interface Contact {
+  id: string
+  user_id: string
+  contact_id: string
+  status: string
+  message?: string
+  created_at: string
+  accepted_at?: string
+  nickname?: string
+  wallet_address?: string
+  email?: string
+}
+
+export interface UserLookup {
+  id: string
+  nickname?: string
+  wallet_address?: string
+  identity_display?: string
+  is_contact: boolean
+  contact_status?: string
+}
+
+export async function listContacts(token: string): Promise<Contact[]> {
+  return request('/api/contacts', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export async function listPendingInvites(token: string): Promise<Contact[]> {
+  return request('/api/contacts/pending', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+export async function sendInvite(
+  token: string,
+  opts: { address?: string; nickname?: string; email?: string; message?: string }
+): Promise<{ status: string; current?: string }> {
+  return request('/api/contacts/invite', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(opts),
+  })
+}
+
+export async function acceptInvite(token: string, contactId: string): Promise<{ status: string }> {
+  return request('/api/contacts/accept', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ contact_id: contactId }),
+  })
+}
+
+export async function rejectInvite(token: string, contactId: string): Promise<{ status: string }> {
+  return request('/api/contacts/reject', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ contact_id: contactId }),
+  })
+}
+
+export async function removeContact(token: string, contactId: string): Promise<{ status: string }> {
+  return request('/api/contacts/remove', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ contact_id: contactId }),
+  })
+}
+
+export async function lookupUser(
+  token: string,
+  opts: { address?: string; nickname?: string }
+): Promise<UserLookup[]> {
+  return request('/api/contacts/lookup', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(opts),
+  })
 }

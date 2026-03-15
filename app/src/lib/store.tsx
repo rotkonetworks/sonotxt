@@ -1,7 +1,8 @@
 // App store with fine-grained reactivity
 import { createSignal, createContext, useContext, ParentComponent, batch } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
-import type { User } from './api'
+import type { User, Contact } from './api'
+import * as api from './api'
 import { TeeClient, type AttestationBundle } from './teeClient'
 import {
   isPrfAvailable,
@@ -48,6 +49,9 @@ export interface AppState {
   user: User | null
   freeRemaining: number
   history: HistoryItem[]
+  contacts: Contact[]
+  pendingInvites: Contact[]
+  favorites: string[] // contact_id list, stored locally
   stats: {
     generated: number
     chars: number
@@ -63,6 +67,7 @@ const STORAGE_KEYS = {
   token: 'sonotxt_token',
   history: 'sonotxt_history',
   stats: 'sonotxt_stats',
+  favorites: 'sonotxt_favorites',
 } as const
 
 function loadFromStorage<T>(key: string, fallback: T): T {
@@ -85,6 +90,9 @@ export function createAppStore() {
     user: null,
     freeRemaining: 1000,
     history: loadFromStorage(STORAGE_KEYS.history, []),
+    contacts: [],
+    pendingInvites: [],
+    favorites: loadFromStorage(STORAGE_KEYS.favorites, []),
     stats: loadFromStorage(STORAGE_KEYS.stats, { generated: 0, chars: 0 }),
     tee: {
       connected: false,
@@ -116,19 +124,85 @@ export function createAppStore() {
         setState('user', user)
         setToken(authToken)
       })
-      saveToStorage(STORAGE_KEYS.token, authToken)
+      // Store token as raw string — not via saveToStorage which JSON.stringify wraps it
+      localStorage.setItem(STORAGE_KEYS.token, authToken)
     },
 
     logout() {
+      const tok = token()
       batch(() => {
         setState('user', null)
         setToken(null)
       })
       localStorage.removeItem(STORAGE_KEYS.token)
+      if (tok) api.logout(tok).catch(() => {})
     },
 
     setFreeRemaining(amount: number) {
       setState('freeRemaining', amount)
+    },
+
+    updateAvatar(avatar: string | null) {
+      setState('user', (u) => u ? { ...u, avatar: avatar ?? undefined } : null)
+    },
+
+    async loadContacts() {
+      const tok = token()
+      if (!tok) return
+      try {
+        const [contacts, pending] = await Promise.all([
+          api.listContacts(tok),
+          api.listPendingInvites(tok),
+        ])
+        batch(() => {
+          setState('contacts', contacts)
+          setState('pendingInvites', pending)
+        })
+      } catch {}
+    },
+
+    toggleFavorite(contactId: string) {
+      setState(produce(s => {
+        const idx = s.favorites.indexOf(contactId)
+        if (idx >= 0) {
+          s.favorites.splice(idx, 1)
+        } else {
+          s.favorites.push(contactId)
+        }
+      }))
+      saveToStorage(STORAGE_KEYS.favorites, state.favorites)
+    },
+
+    async sendInvite(opts: { address?: string; nickname?: string; email?: string; message?: string }) {
+      const tok = token()
+      if (!tok) return
+      await api.sendInvite(tok, opts)
+      await this.loadContacts()
+    },
+
+    async acceptInvite(contactId: string) {
+      const tok = token()
+      if (!tok) return
+      await api.acceptInvite(tok, contactId)
+      await this.loadContacts()
+    },
+
+    async rejectInvite(contactId: string) {
+      const tok = token()
+      if (!tok) return
+      await api.rejectInvite(tok, contactId)
+      await this.loadContacts()
+    },
+
+    async removeContact(contactId: string) {
+      const tok = token()
+      if (!tok) return
+      await api.removeContact(tok, contactId)
+      setState(produce(s => {
+        s.contacts = s.contacts.filter(c => c.contact_id !== contactId)
+        s.favorites = s.favorites.filter(f => f !== contactId)
+      }))
+      saveToStorage(STORAGE_KEYS.favorites, state.favorites)
     },
 
     async addToHistory(item: Omit<HistoryItem, 'id' | 'date'>) {
@@ -145,6 +219,13 @@ export function createAppStore() {
           const blob = await res.blob()
           await saveAudio(newItem.id, blob)
         } catch {}
+      }
+
+      // Revoke blob URLs of items that will be evicted
+      if (state.history.length >= 50) {
+        for (const evicted of state.history.slice(49)) {
+          if (evicted.url?.startsWith('blob:')) URL.revokeObjectURL(evicted.url)
+        }
       }
 
       setState(
@@ -169,18 +250,26 @@ export function createAppStore() {
           const url = await loadAudio(item.id)
           if (url) {
             setState('history', i, 'url', url)
+          } else if (item.url?.startsWith('blob:')) {
+            // Stale blob URL from previous session — clear it so UI doesn't show broken play button
+            setState('history', i, 'url', '')
           }
         } catch {}
       }
     },
 
     clearHistory() {
+      for (const item of state.history) {
+        if (item.url?.startsWith('blob:')) URL.revokeObjectURL(item.url)
+      }
       setState('history', [])
       localStorage.removeItem(STORAGE_KEYS.history)
       clearAllAudio().catch(() => {})
     },
 
     removeFromHistory(id: string) {
+      const item = state.history.find((h) => h.id === id)
+      if (item?.url?.startsWith('blob:')) URL.revokeObjectURL(item.url)
       deleteAudio(id).catch(() => {})
       setState(
         produce((s) => {
@@ -311,6 +400,13 @@ export function createAppStore() {
         voice,
         date: new Date().toISOString(),
         isEncrypted: true,
+      }
+
+      // Revoke blob URLs of items that will be evicted
+      if (state.history.length >= 50) {
+        for (const evicted of state.history.slice(49)) {
+          if (evicted.url?.startsWith('blob:')) URL.revokeObjectURL(evicted.url)
+        }
       }
 
       setState(
