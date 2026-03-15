@@ -19,8 +19,10 @@ export function Player(props: PlayerProps) {
   const [seekPreviewPct, setSeekPreviewPct] = createSignal<number | null>(null)
   const [hoverPct, setHoverPct] = createSignal<number | null>(null)
   const [playbackRate, setPlaybackRate] = createSignal(1)
-  const [, setVolume] = createSignal(1)
+  const [volume, setVolume] = createSignal(1)
+  const [volumeVisible, setVolumeVisible] = createSignal(false)
   const [, setBuffered] = createSignal(0)
+  let volumeHideTimer: ReturnType<typeof setTimeout> | undefined
 
   const speeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
 
@@ -51,6 +53,7 @@ export function Player(props: PlayerProps) {
 
   onCleanup(() => {
     stopAnimation()
+    clearTimeout(volumeHideTimer)
     if (audioRef) {
       audioRef.pause()
       audioRef.src = ''
@@ -194,17 +197,23 @@ export function Player(props: PlayerProps) {
         case 'ArrowUp':
           e.preventDefault()
           if (audioRef) {
-            const v = Math.min(1, audioRef.volume + 0.1)
+            const v = Math.min(1, Math.round((audioRef.volume + 0.1) * 10) / 10)
             audioRef.volume = v
             setVolume(v)
+            setVolumeVisible(true)
+            clearTimeout(volumeHideTimer)
+            volumeHideTimer = setTimeout(() => setVolumeVisible(false), 1200)
           }
           break
         case 'ArrowDown':
           e.preventDefault()
           if (audioRef) {
-            const v = Math.max(0, audioRef.volume - 0.1)
+            const v = Math.max(0, Math.round((audioRef.volume - 0.1) * 10) / 10)
             audioRef.volume = v
             setVolume(v)
+            setVolumeVisible(true)
+            clearTimeout(volumeHideTimer)
+            volumeHideTimer = setTimeout(() => setVolumeVisible(false), 1200)
           }
           break
         case 's':
@@ -252,10 +261,11 @@ export function Player(props: PlayerProps) {
       const res = await fetch(props.src)
       const blob = await res.blob()
       const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
+      const url = URL.createObjectURL(blob)
+      a.href = url
       a.download = `sonotxt-${Date.now()}.mp3`
       a.click()
-      URL.revokeObjectURL(a.href)
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
     } catch {
       showToast('Download failed', 'error')
     }
@@ -272,8 +282,9 @@ export function Player(props: PlayerProps) {
         await navigator.share({ title: 'sonotxt audio', url: props.src })
       } catch {}
     } else {
-      await navigator.clipboard.writeText(props.src)
-      showToast('Link copied!', 'success')
+      navigator.clipboard.writeText(props.src).then(() => {
+        showToast('Link copied!', 'success')
+      }).catch(() => {})
     }
   }
 
@@ -293,17 +304,25 @@ export function Player(props: PlayerProps) {
 
       <div class="flex items-center gap-2 sm:gap-3">
         {/* Play/Pause */}
-        <button
-          class={`w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center flex-shrink-0 transition-all ${
-            props.src
-              ? 'bg-accent hover:bg-accent-hover text-white cursor-pointer'
-              : 'bg-accent-soft text-fg-faint cursor-not-allowed'
-          }`}
-          onClick={togglePlay}
-          disabled={!props.src}
-        >
-          <span class={`${isPlaying() ? 'i-mdi-pause' : 'i-mdi-play'} w-4 h-4 sm:w-5 sm:h-5`} />
-        </button>
+        <div class="relative flex-shrink-0">
+          <button
+            class={`w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center transition-all ${
+              props.src
+                ? 'bg-accent hover:bg-accent-hover text-white cursor-pointer'
+                : 'bg-accent-soft text-fg-faint cursor-not-allowed'
+            }`}
+            onClick={togglePlay}
+            disabled={!props.src}
+          >
+            <span class={`${isPlaying() ? 'i-mdi-pause' : 'i-mdi-play'} w-4 h-4 sm:w-5 sm:h-5`} />
+          </button>
+          <Show when={volumeVisible()}>
+            <div class="absolute -top-6 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-surface border border-edge-soft text-[9px] font-mono text-fg-muted whitespace-nowrap">
+              <span class={`${volume() === 0 ? 'i-mdi-volume-off' : volume() < 0.5 ? 'i-mdi-volume-low' : 'i-mdi-volume-high'} w-2.5 h-2.5 inline-block align-middle mr-0.5`} />
+              {Math.round(volume() * 100)}%
+            </div>
+          </Show>
+        </div>
 
         {/* Skip back */}
         <button

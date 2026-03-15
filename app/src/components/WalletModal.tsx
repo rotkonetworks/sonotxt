@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from 'solid-js'
+import { createSignal, For, Show, onCleanup } from 'solid-js'
 import type { Wallet, WalletAccount } from '@talismn/connect-wallets'
 import {
   getAvailableWallets,
@@ -21,6 +21,13 @@ export default function WalletModal(props: Props) {
   const [step, setStep] = createSignal<Step>('wallets')
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal('')
+
+  // Escape to close (blocked during signing)
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && !loading()) props.onClose()
+  }
+  window.addEventListener('keydown', onKeyDown)
+  onCleanup(() => window.removeEventListener('keydown', onKeyDown))
 
   const wallets = getAvailableWallets()
   const installed = () => wallets.filter(w => w.installed)
@@ -86,12 +93,11 @@ export default function WalletModal(props: Props) {
 
   return (
     <div
-      class="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={props.onClose}
+      class="fixed inset-0 flex items-center justify-center z-50 p-4 bg-black/50"
+      onClick={() => { if (!loading()) props.onClose() }}
     >
       <div
-        class="w-full max-w-xs bg-surface border-2 border-edge shadow-sharp"
+        class="w-full max-w-xs bg-surface border-2 border-edge shadow-[var(--shadow)] animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Title bar */}
@@ -101,14 +107,50 @@ export default function WalletModal(props: Props) {
             {step() === 'wallets' ? 'CONNECT WALLET' : step() === 'accounts' ? 'SELECT ACCOUNT' : 'SIGNING...'}
           </span>
           <button
-            onClick={props.onClose}
-            class="btn-win px-2 py-0.5 text-xs"
+            onClick={() => { if (!loading()) props.onClose() }}
+            class="text-fg-faint hover:text-accent p-1 transition-colors"
           >
-            X
+            <span class="i-mdi-close w-4 h-4" />
           </button>
         </div>
 
-        <div style={{ padding: '12px' }}>
+        {/* Step indicator */}
+        {(() => {
+          const steps = [
+            { id: 'wallets' as const, label: 'Wallet' },
+            { id: 'accounts' as const, label: 'Account' },
+            { id: 'signing' as const, label: 'Sign' },
+          ]
+          const stepIds = steps.map(s => s.id)
+          const curIdx = () => stepIds.indexOf(step())
+          return (
+            <div class="flex items-center justify-center gap-0 px-4 py-2 border-b border-edge-soft">
+              <For each={steps}>{(s, i) => (
+                <>
+                  <Show when={i() > 0}>
+                    <div class={`w-6 h-px ${i() < curIdx() ? 'bg-accent' : 'bg-edge-soft'}`} />
+                  </Show>
+                  <div class="flex items-center gap-1">
+                    <div class={`w-4 h-4 flex items-center justify-center text-[8px] font-mono border transition-colors ${
+                      i() < curIdx() ? 'bg-accent border-accent text-white' :
+                      i() === curIdx() ? 'border-accent text-accent' :
+                      'border-edge-soft text-fg-faint'
+                    }`}>
+                      <Show when={i() < curIdx()} fallback={i() + 1}>
+                        <span class="i-mdi-check w-2.5 h-2.5" />
+                      </Show>
+                    </div>
+                    <span class={`text-[9px] font-heading uppercase tracking-wider ${
+                      i() === curIdx() ? 'text-accent' : i() < curIdx() ? 'text-accent/50' : 'text-fg-faint'
+                    }`}>{s.label}</span>
+                  </div>
+                </>
+              )}</For>
+            </div>
+          )
+        })()}
+
+        <div class="p-3">
           {/* Error */}
           <Show when={error()}>
             <div class="text-[10px] text-red-600 mb-2 p-2 bg-red-50 border border-red-200">
@@ -150,7 +192,7 @@ export default function WalletModal(props: Props) {
                   <a
                     href={wallet.installUrl}
                     target="_blank"
-                    rel="noopener"
+                    rel="noopener noreferrer"
                     class="flex items-center gap-2 p-2 opacity-50 hover:opacity-75 border border-edge-soft transition-opacity"
                   >
                     <img
@@ -169,7 +211,7 @@ export default function WalletModal(props: Props) {
               <div class="text-xs text-fg-muted text-center py-4">
                 No Polkadot wallets detected.
                 <br />
-                <a href="https://talisman.xyz" target="_blank" rel="noopener" class="text-accent hover:underline">
+                <a href="https://talisman.xyz" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline">
                   Install Talisman
                 </a>
               </div>

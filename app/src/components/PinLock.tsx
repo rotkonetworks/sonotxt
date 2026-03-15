@@ -1,13 +1,15 @@
-import { createSignal, Show, For } from 'solid-js'
+import { createSignal, Show, For, onCleanup } from 'solid-js'
 
 const PIN_HASH_KEY = 'sonotxt_pin_hash'
 const PIN_LENGTH = 4
 
-// Use SubtleCrypto SHA-256 for PIN hashing (available in all browsers)
+// Use PBKDF2 with 100k iterations to make brute-force of 4-digit PINs expensive
 async function hashPin(pin: string): Promise<string> {
-  const data = new TextEncoder().encode(`sonotxt-pin-v1:${pin}`)
-  const buf = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+  const enc = new TextEncoder()
+  const key = await crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveBits'])
+  const salt = enc.encode('sonotxt-pin-v2')
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' }, key, 256)
+  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 interface Props {
@@ -28,17 +30,28 @@ export function removePinLock() {
 
 async function verifyPin(pin: string): Promise<boolean> {
   const stored = localStorage.getItem(PIN_HASH_KEY)
-  if (!stored) return true
-  return (await hashPin(pin)) === stored
+  if (!stored) return false
+  const computed = await hashPin(pin)
+  // constant-time comparison to prevent timing oracle
+  if (computed.length !== stored.length) return false
+  let diff = 0
+  for (let i = 0; i < computed.length; i++) {
+    diff |= computed.charCodeAt(i) ^ stored.charCodeAt(i)
+  }
+  return diff === 0
 }
 
 export default function PinLock(props: Props) {
   const [pin, setPin] = createSignal('')
   const [error, setError] = createSignal(false)
   const [shake, setShake] = createSignal(false)
+  const [locked, setLocked] = createSignal(false)
+  const [lockRemaining, setLockRemaining] = createSignal(0)
+  let failCount = 0
+  let lockTimer: ReturnType<typeof setInterval> | undefined
 
   function press(digit: string) {
-    if (pin().length >= PIN_LENGTH) return
+    if (pin().length >= PIN_LENGTH || locked()) return
     const next = pin() + digit
     setPin(next)
     setError(false)
@@ -47,17 +60,41 @@ export default function PinLock(props: Props) {
       // Auto-submit when full
       setTimeout(async () => {
         if (await verifyPin(next)) {
+          failCount = 0
           props.onUnlock()
         } else {
+          failCount++
           setError(true)
           setShake(true)
           setTimeout(() => { setShake(false); setPin('') }, 500)
+          // Exponential backoff: 2s, 4s, 8s, 16s, 30s max
+          if (failCount >= 3) {
+            const delaySec = Math.min(30, Math.pow(2, failCount - 2))
+            setLocked(true)
+            setLockRemaining(delaySec)
+            lockTimer = setInterval(() => {
+              setLockRemaining(r => {
+                if (r <= 1) { clearInterval(lockTimer); setLocked(false); return 0 }
+                return r - 1
+              })
+            }, 1000)
+          }
         }
       }, 100)
     }
   }
 
+  // Keyboard support — stopPropagation prevents App.tsx handlers from firing behind the lock screen
+  function onKeyDown(e: KeyboardEvent) {
+    e.stopPropagation()
+    if (e.key >= '0' && e.key <= '9') press(e.key)
+    else if (e.key === 'Backspace') backspace()
+  }
+  window.addEventListener('keydown', onKeyDown)
+  onCleanup(() => { window.removeEventListener('keydown', onKeyDown); if (lockTimer) clearInterval(lockTimer) })
+
   function backspace() {
+    if (locked()) return
     setPin(pin().slice(0, -1))
     setError(false)
   }
@@ -97,7 +134,12 @@ export default function PinLock(props: Props) {
         )}</For>
       </div>
 
-      <Show when={error()}>
+      <Show when={locked()}>
+        <p class="text-[10px] text-red-500 font-heading uppercase tracking-wider mb-2">
+          Too many attempts — wait {lockRemaining()}s
+        </p>
+      </Show>
+      <Show when={error() && !locked()}>
         <p class="text-[10px] text-red-500 font-heading uppercase tracking-wider mb-2">Wrong PIN</p>
       </Show>
 

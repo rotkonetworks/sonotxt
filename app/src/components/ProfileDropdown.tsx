@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js'
+import { createSignal, Show, createEffect, onCleanup } from 'solid-js'
 import { useStore } from '../lib/store'
 
 interface Props {
@@ -9,6 +9,18 @@ interface Props {
 export default function ProfileDropdown(props: Props) {
   const { state: store } = useStore()
   const [open, setOpen] = createSignal(false)
+
+  // Escape to close dropdown
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && open()) { setOpen(false); e.stopImmediatePropagation() }
+  }
+  createEffect(() => {
+    window.removeEventListener('keydown', onKeyDown)
+    if (open()) {
+      window.addEventListener('keydown', onKeyDown)
+    }
+  })
+  onCleanup(() => window.removeEventListener('keydown', onKeyDown))
 
   const formattedBalance = () => {
     if (!store.user) return null
@@ -47,6 +59,7 @@ export default function ProfileDropdown(props: Props) {
       <Show when={open()}>
         <div
           class="absolute right-0 top-full mt-1 z-50 min-w-[180px] bg-surface border-2 border-edge shadow-sharp"
+          style="animation: dropdown-in 0.15s ease-out"
         >
           {/* User info header */}
           <div class="px-3 py-2 border-b border-edge-soft">
@@ -62,7 +75,7 @@ export default function ProfileDropdown(props: Props) {
           <div class="px-3 py-2 border-b border-edge-soft">
             <div class="flex justify-between items-center">
               <span class="text-[10px] text-fg-muted uppercase">Balance</span>
-              <span class="text-sm text-accent font-mono">${store.user?.balance.toFixed(2)}</span>
+              <span class="text-sm text-accent font-mono">${(store.user?.balance ?? 0).toFixed(2)}</span>
             </div>
             <div class="flex justify-between items-center mt-1">
               <span class="text-[10px] text-fg-faint">Free chars</span>

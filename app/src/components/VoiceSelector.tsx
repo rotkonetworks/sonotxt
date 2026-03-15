@@ -155,6 +155,7 @@ function VoiceButton(props: VoiceButtonProps) {
       <Show when={props.previewing}>
         <span class="i-mdi-volume-high w-3 h-3 animate-pulse" />
       </Show>
+      <span class={`w-2.5 h-2.5 ${props.voice.gender === 'F' ? 'i-mdi-gender-female text-pink-400' : 'i-mdi-gender-male text-blue-400'}`} />
       {props.voice.name}
       <span class="text-fg-faint text-[9px]">{props.voice.accent}</span>
     </button>

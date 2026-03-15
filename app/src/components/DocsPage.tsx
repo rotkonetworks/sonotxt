@@ -1,4 +1,4 @@
-import { Component, createSignal, For, Show } from 'solid-js'
+import { Component, createSignal, For, Show, onCleanup } from 'solid-js'
 
 interface Props {
   onClose: () => void
@@ -8,6 +8,24 @@ type Section = 'overview' | 'tee' | 'noise' | 'attestation' | 'threat-model'
 
 const DocsPage: Component<Props> = (props) => {
   const [section, setSection] = createSignal<Section>('overview')
+  let contentRef: HTMLDivElement | undefined
+
+  // Escape to close — skip if a modal overlay rendered after this one has focus
+  function onKeyDown(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return
+    // If the event target is inside a different fixed overlay (modal on top), don't close
+    const target = e.target as HTMLElement
+    if (contentRef && !contentRef.contains(target) && target !== document.body) return
+    props.onClose()
+  }
+  window.addEventListener('keydown', onKeyDown)
+  onCleanup(() => window.removeEventListener('keydown', onKeyDown))
+
+  function switchSection(s: Section) {
+    setSection(s)
+    // Defer scroll until after SolidJS has flushed the DOM update
+    queueMicrotask(() => contentRef?.scrollTo({ top: 0, behavior: 'smooth' }))
+  }
 
   const sections: { id: Section; title: string }[] = [
     { id: 'overview', title: 'Overview' },
@@ -18,7 +36,7 @@ const DocsPage: Component<Props> = (props) => {
   ]
 
   return (
-    <div class="fixed inset-0 z-50 overflow-auto" style={{ background: 'color-mix(in srgb, var(--bg) 95%, transparent)' }}>
+    <div ref={contentRef} class="fixed inset-0 z-50 overflow-auto" style={{ background: 'color-mix(in srgb, var(--bg) 95%, transparent)' }}>
       <div class="min-h-screen p-4 sm:p-8">
         <div class="max-w-4xl mx-auto">
           {/* Header */}
@@ -45,7 +63,7 @@ const DocsPage: Component<Props> = (props) => {
                     ? 'bg-accent-soft text-accent-strong border-2 border-edge'
                     : 'bg-surface text-fg-muted hover:text-fg border border-edge-soft'
                 }`}
-                onClick={() => setSection(s.id)}
+                onClick={() => switchSection(s.id)}
               >
                 {s.title}
               </button>
@@ -398,11 +416,11 @@ const DocsPage: Component<Props> = (props) => {
 
           {/* Footer */}
           <div class="mt-6 text-center text-xs text-fg-muted font-heading">
-            <a href="https://github.com/rotkonetworks/sonotxt" class="hover:text-accent">Source Code</a>
+            <a href="https://github.com/rotkonetworks/sonotxt" target="_blank" rel="noopener noreferrer" class="hover:text-accent">Source Code</a>
             {' · '}
-            <a href="https://noiseprotocol.org/noise.html" class="hover:text-accent">Noise Protocol Spec</a>
+            <a href="https://noiseprotocol.org/noise.html" target="_blank" rel="noopener noreferrer" class="hover:text-accent">Noise Protocol Spec</a>
             {' · '}
-            <a href="https://www.amd.com/en/developer/sev.html" class="hover:text-accent">AMD SEV-SNP</a>
+            <a href="https://www.amd.com/en/developer/sev.html" target="_blank" rel="noopener noreferrer" class="hover:text-accent">AMD SEV-SNP</a>
           </div>
         </div>
       </div>

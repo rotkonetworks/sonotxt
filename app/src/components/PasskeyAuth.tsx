@@ -46,28 +46,30 @@ export default function PasskeyAuth() {
   }
 
   return (
-    <div class="passkey-auth">
+    <div class="text-xs">
       <Show when={!state.passkey.available}>
-        <div class="passkey-unavailable">
-          <p>passkey authentication not available on this device.</p>
+        <div>
+          <p class="text-fg-muted">Passkey authentication not available on this device.</p>
           <button
-            class="link-btn"
+            class="text-accent text-[11px] hover:underline mt-2 flex items-center gap-1"
             onClick={() => setShowLinuxHelp(!showLinuxHelp())}
           >
-            linux users: setup guide
+            <span class={`i-mdi-chevron-right w-3 h-3 transition-transform ${showLinuxHelp() ? 'rotate-90' : ''}`} />
+            Linux users: setup guide
           </button>
           <Show when={showLinuxHelp()}>
-            <div class="linux-help">
-              <p>
-                linux requires additional setup to use tpm-based passkeys in the browser.
-                follow this guide to enable prf support:
+            <div class="mt-3 p-3 bg-page border border-edge-soft">
+              <p class="text-fg-muted text-[11px]">
+                Linux requires additional setup to use TPM-based passkeys in the browser.
+                Follow this guide to enable PRF support:
               </p>
               <a
                 href="https://vitorpy.com/blog/2025-12-25-confer-to-linux-tpm-fido2-prf/"
                 target="_blank"
-                rel="noopener"
+                rel="noopener noreferrer"
+                class="block mt-2 text-accent text-[11px] hover:underline"
               >
-                vitorpy.com: linux tpm fido2 prf setup
+                vitorpy.com: Linux TPM FIDO2 PRF setup
               </a>
             </div>
           </Show>
@@ -76,50 +78,59 @@ export default function PasskeyAuth() {
 
       <Show when={state.passkey.available}>
         <Show when={!state.passkey.registered}>
-          <div class="passkey-register">
-            <p>secure your history with a passkey</p>
-            <p class="hint">uses your device's biometrics or pin to encrypt data locally</p>
+          <div>
+            <p class="text-fg">Secure your history with a passkey</p>
+            <p class="text-[10px] text-fg-muted mt-1">Uses your device's biometrics or PIN to encrypt data locally</p>
             <button
               onClick={handleRegister}
               disabled={loading()}
-              class="primary-btn"
+              class="w-full mt-3 px-4 py-2.5 bg-accent text-white font-heading text-[10px] uppercase tracking-wider border-2 border-accent-strong hover:bg-accent-hover disabled:opacity-60 disabled:cursor-wait transition-colors"
             >
-              {loading() ? 'creating...' : 'create passkey'}
+              {loading() ? 'Creating...' : 'Create passkey'}
             </button>
           </div>
         </Show>
 
         <Show when={state.passkey.registered && !state.passkey.unlocked}>
-          <div class="passkey-unlock">
-            <p>unlock with passkey</p>
+          <div>
+            <p class="text-fg">Unlock with passkey</p>
             <button
               onClick={handleUnlock}
               disabled={loading()}
-              class="primary-btn"
+              class="w-full mt-3 px-4 py-2.5 bg-accent text-white font-heading text-[10px] uppercase tracking-wider border-2 border-accent-strong hover:bg-accent-hover disabled:opacity-60 disabled:cursor-wait transition-colors"
             >
-              {loading() ? 'verifying...' : 'unlock'}
+              {loading() ? 'Verifying...' : 'Unlock'}
             </button>
             <button
               onClick={handleClear}
-              class="text-btn danger"
+              class="mt-2 px-2 py-1 text-[10px] text-fg-muted hover:text-red-500 transition-colors"
             >
-              remove passkey
+              Remove passkey
             </button>
           </div>
         </Show>
 
         <Show when={state.passkey.unlocked}>
-          <div class="passkey-unlocked">
-            <span class="status">unlocked</span>
-            <button onClick={handleLock} class="text-btn">
-              lock
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <span class="i-mdi-lock-open w-3.5 h-3.5 text-emerald-600" />
+              <span class="text-emerald-700 font-heading text-[10px] uppercase tracking-wider">Unlocked</span>
+            </div>
+            <button
+              onClick={handleLock}
+              class="px-2 py-1 text-[10px] text-fg-muted hover:text-fg transition-colors"
+            >
+              Lock
             </button>
           </div>
         </Show>
       </Show>
 
       <Show when={error()}>
-        <p class="error">{error()}</p>
+        <div class="flex items-start gap-1.5 mt-2 p-2 bg-red-50 border border-red-200 text-red-700 text-[11px]">
+          <span class="i-mdi-alert-circle w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          <span>{error()}</span>
+        </div>
       </Show>
     </div>
   )

@@ -18,6 +18,25 @@
   --shadow: 0.25rem 0.25rem 0 0 #881337;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18181b;
+    --surface: #27272a;
+    --fg: #fafafa;
+    --fg-muted: #a1a1aa;
+    --fg-faint: #71717a;
+    --accent: #fb7185;
+    --accent-hover: #f43f5e;
+    --accent-strong: #fda4af;
+    --accent-soft: #3f1219;
+    --accent-muted: #5c1a28;
+    --accent-faint: #881337;
+    --border: #52525b;
+    --border-soft: #3f3f46;
+    --shadow: 0.25rem 0.25rem 0 0 #09090b;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -112,6 +131,19 @@ button {
   font-family: inherit;
 }
 
+/* focus-visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
 a {
   color: var(--accent);
   text-decoration: none;
@@ -121,24 +153,78 @@ a:hover {
   text-decoration: underline;
 }
 
+/* selection — match rose theme */
+::selection {
+  background: var(--accent-muted);
+  color: var(--accent-strong);
+}
+
+/* reduced motion — accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* audio player override */
 audio {
   height: 32px;
 }
 
-/* scrollbar */
+/* scrollbar — uses theme variables for dark mode compat */
 ::-webkit-scrollbar {
-  width: 10px;
-  background: var(--accent-soft);
+  width: 8px;
+  background: var(--bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--accent-faint);
-  border: 1px solid var(--accent-muted);
+  background: var(--border-soft);
+  border: 1px solid var(--border-soft);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
+}
+
+/* thin scrollbar for sidebar */
+aside ::-webkit-scrollbar {
+  width: 4px;
+}
+
+aside ::-webkit-scrollbar-thumb {
+  background: var(--accent-muted);
+  border: none;
+}
+
+/* toast animation */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px) scale(0.95); }
+}
+
+/* scroll fade for horizontal overflow containers */
+.scroll-fade {
+  mask-image: linear-gradient(to right, transparent, black 1rem, black calc(100% - 1rem), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 1rem, black calc(100% - 1rem), transparent);
+}
+
+/* message slide-in */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* dropdown slide */
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* pin shake animation */
@@ -154,99 +240,90 @@ audio {
   animation: shake 0.4s ease-in-out;
 }
 
-/* passkey auth styles */
-.passkey-auth {
-  font-size: 12px;
+/* content fade-in */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.passkey-auth .hint {
-  font-size: 10px;
-  color: var(--fg-muted);
-  margin-top: 4px;
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
 }
 
-.passkey-auth .primary-btn {
-  background: var(--accent);
-  border: 2px solid var(--border);
-  color: #fff;
-  padding: 10px 20px;
-  font-size: 11px;
-  cursor: pointer;
-  width: 100%;
-  margin-top: 12px;
-  font-family: 'Space Grotesk', sans-serif;
-  font-weight: 600;
+/* loading pulse dots */
+@keyframes loading-dots {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
 }
 
-.passkey-auth .primary-btn:hover {
-  background: var(--accent-hover);
+.loading-dot {
+  animation: loading-dots 1.4s infinite ease-in-out both;
 }
 
-.passkey-auth .primary-btn:disabled {
-  opacity: 0.6;
-  cursor: wait;
+.loading-dot:nth-child(2) { animation-delay: 0.16s; }
+.loading-dot:nth-child(3) { animation-delay: 0.32s; }
+
+/* system message auto-fade — CSS-only, no timer cleanup needed */
+@keyframes sys-msg-fade {
+  0%, 70% { opacity: 0.6; }
+  100% { opacity: 0.25; }
 }
 
-.passkey-auth .text-btn {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  font-size: 10px;
-  cursor: pointer;
-  padding: 4px 8px;
-  margin-top: 8px;
+.sys-msg-fade {
+  animation: sys-msg-fade 8s ease-out forwards;
 }
 
-.passkey-auth .text-btn:hover {
-  color: var(--fg);
+/* toast countdown bar */
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
-.passkey-auth .text-btn.danger:hover {
-  color: #ef4444;
+/* modal entrance */
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-.passkey-auth .link-btn {
-  background: none;
-  border: none;
-  color: var(--accent);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 4px 0;
-  text-decoration: underline;
+.animate-modal-in {
+  animation: modal-in 0.2s ease-out;
 }
 
-.passkey-auth .linux-help {
-  margin-top: 12px;
-  padding: 12px;
-  background: var(--bg);
-  border: 1px solid var(--border-soft);
+/* equalizer bars */
+@keyframes eq-bar {
+  0%, 100% { height: 20%; }
+  50% { height: 80%; }
 }
 
-.passkey-auth .linux-help a {
-  display: block;
-  margin-top: 8px;
-  color: var(--accent);
+.eq-bar {
+  display: inline-block;
+  width: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  animation: eq-bar 0.8s ease-in-out infinite;
 }
 
-.passkey-auth .error {
-  color: #dc2626;
-  font-size: 11px;
-  margin-top: 8px;
-  padding: 8px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+.eq-bar:nth-child(1) { animation-delay: 0s; }
+.eq-bar:nth-child(2) { animation-delay: 0.2s; }
+.eq-bar:nth-child(3) { animation-delay: 0.4s; }
+
+/* safe area padding for mobile bottom nav */
+.safe-area-pb {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.passkey-auth .status {
-  color: var(--accent);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+/* content padding to clear bottom nav + safe area */
+.pb-safe-nav {
+  padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
 }
 
-.passkey-auth .passkey-unlocked {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* page transition for mode switches */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-page-enter {
+  animation: page-enter 0.15s ease-out;
 }
 

@@ -10,6 +10,7 @@ const KEY_DERIVATION_SALT = new TextEncoder().encode('sonotxt-key-derivation-v1'
 interface Props {
   onClose: () => void
   onLogin: (user: { id: string; nickname?: string; email?: string; balance: number }, token: string) => void
+  initialMode?: 'email-login' | 'login'
 }
 
 type Mode = 'login' | 'register' | 'magic' | 'recover' | 'show-recovery-share' | 'email-login'
@@ -24,6 +25,9 @@ function splitSecret(secret: Uint8Array): { serverShare: Uint8Array; userShare: 
 }
 
 function combineShares(serverShare: Uint8Array, userShare: Uint8Array): Uint8Array {
+  if (serverShare.length !== userShare.length) {
+    throw new Error('Share length mismatch')
+  }
   const secret = new Uint8Array(serverShare.length)
   for (let i = 0; i < serverShare.length; i++) {
     secret[i] = serverShare[i] ^ userShare[i]
@@ -31,6 +35,7 @@ function combineShares(serverShare: Uint8Array, userShare: Uint8Array): Uint8Arr
   return secret
 }
 
+// Exactly 256 entries — one per byte value, bijective encoding (no modulo needed).
 const WORDLIST = [
   'abandon', 'ability', 'able', 'about', 'above', 'absent', 'absorb', 'abstract',
   'absurd', 'abuse', 'access', 'accident', 'account', 'accuse', 'achieve', 'acid',
@@ -69,7 +74,7 @@ const WORDLIST = [
 function bytesToWords(bytes: Uint8Array): string {
   const words: string[] = []
   for (let i = 0; i < bytes.length; i++) {
-    words.push(WORDLIST[bytes[i] % WORDLIST.length])
+    words.push(WORDLIST[bytes[i]])
   }
   return words.join(' ')
 }
@@ -86,7 +91,7 @@ function wordsToBytes(words: string): Uint8Array {
 }
 
 export default function AuthModal(props: Props) {
-  const [mode, setMode] = createSignal<Mode>('email-login')
+  const [mode, setMode] = createSignal<Mode>(props.initialMode || 'email-login')
   const [nickname, setNickname] = createSignal('')
   const [pin, setPin] = createSignal('')
   const [email, setEmail] = createSignal('')
@@ -99,6 +104,42 @@ export default function AuthModal(props: Props) {
   const [error, setError] = createSignal('')
   const [message, setMessage] = createSignal('')
   const [copiedShare, setCopiedShare] = createSignal(false)
+  const [showPassword, setShowPassword] = createSignal(false)
+  const [nickAvailable, setNickAvailable] = createSignal<boolean | null>(null)
+  const [nickChecking, setNickChecking] = createSignal(false)
+
+  let nickCheckTimer: ReturnType<typeof setTimeout> | undefined
+
+  function clearError() { if (error()) setError(''); if (message()) setMessage('') }
+
+  function switchMode(m: Mode) {
+    setMode(m)
+    setError('')
+    setMessage('')
+    setShowPassword(false)
+    if (nickCheckTimer) clearTimeout(nickCheckTimer)
+    setNickChecking(false)
+    setNickAvailable(null)
+  }
+
+  function onNicknameInput(value: string) {
+    setNickname(value)
+    clearError()
+    setNickAvailable(null)
+    if (nickCheckTimer) clearTimeout(nickCheckTimer)
+    if (mode() === 'register' && value.trim().length >= 3) {
+      setNickChecking(true)
+      nickCheckTimer = setTimeout(async () => {
+        try {
+          const { available } = await api.checkNickname(value.trim())
+          if (nickname().trim() === value.trim()) {
+            setNickAvailable(available)
+          }
+        } catch {}
+        setNickChecking(false)
+      }, 400)
+    }
+  }
 
   async function deriveKeypair(nick: string, p: string) {
     setDerivingKeys(true)
@@ -119,22 +160,18 @@ export default function AuthModal(props: Props) {
     }
   }
 
-  async function _deriveKeypairFromSeed(seed: Uint8Array) {
-    const publicKey = await getPublicKeyAsync(seed)
-    return { privateKey: seed, publicKey }
-  }
-  void _deriveKeypairFromSeed
-
   async function signChallengeLocally(nick: string, p: string, challenge: string) {
     const { privateKey } = await deriveKeypair(nick, p)
     const messageBytes = new TextEncoder().encode(challenge)
     const signature = await signAsync(messageBytes, privateKey)
+    privateKey.fill(0)
     return bytesToHex(signature)
   }
 
   async function signChallengeWithSeed(seed: Uint8Array, challenge: string) {
     const messageBytes = new TextEncoder().encode(challenge)
     const signature = await signAsync(messageBytes, seed)
+    seed.fill(0)
     return bytesToHex(signature)
   }
 
@@ -185,7 +222,10 @@ export default function AuthModal(props: Props) {
       const { serverShare, userShare } = splitSecret(seed)
       serverShareHex = bytesToHex(serverShare)
       setRecoveryShare(bytesToWords(userShare))
+      serverShare.fill(0)
+      userShare.fill(0)
     }
+    seed.fill(0)
 
     await api.register({
       nickname: nick,
@@ -254,8 +294,11 @@ export default function AuthModal(props: Props) {
     }
 
     const seed = combineShares(serverShare, userShare)
+    serverShare.fill(0)
+    userShare.fill(0)
     const { challenge } = await api.getChallenge(nick)
     const signature = await signChallengeWithSeed(seed, challenge)
+    // seed zeroed inside signChallengeWithSeed
 
     const data = await api.verifyChallenge(nick, challenge, signature)
     props.onLogin(
@@ -264,49 +307,24 @@ export default function AuthModal(props: Props) {
     )
   }
 
-  async function copyRecoveryShare() {
-    await navigator.clipboard.writeText(recoveryShare())
-    setCopiedShare(true)
-    setTimeout(() => setCopiedShare(false), 2000)
+  function copyRecoveryShare() {
+    navigator.clipboard.writeText(recoveryShare()).then(() => {
+      setCopiedShare(true)
+      setTimeout(() => setCopiedShare(false), 2000)
+    }).catch(() => {})
   }
 
   async function continueAfterRecoveryShare() {
     await handleLogin()
   }
 
-  const inputStyle = {
-    width: '100%',
-    background: 'transparent',
-    border: 'none',
-    padding: '8px',
-    color: 'var(--fg)',
-    'font-family': "'IBM Plex Mono', monospace",
-    'font-size': '14px',
-    outline: 'none',
-  }
-
-  const inputContainerStyle = {
-    background: 'var(--surface)',
-    border: '1px solid var(--border-soft)',
-  }
-
-  const labelStyle = {
-    display: 'block',
-    'font-size': '10px',
-    color: 'var(--fg-muted)',
-    'margin-bottom': '4px',
-    'text-transform': 'uppercase',
-    'font-family': "'Space Grotesk', sans-serif",
-  }
-
   return (
     <div
-      class="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={props.onClose}
+      class="fixed inset-0 flex items-center justify-center z-50 p-4 bg-black/50"
+      onClick={() => { if (!loading()) props.onClose() }}
     >
       <div
-        class="w-full max-w-xs bg-surface border-2 border-edge shadow-sharp"
+        class="w-full max-w-xs bg-surface border-2 border-edge shadow-[var(--shadow)] animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Title bar */}
@@ -314,36 +332,34 @@ export default function AuthModal(props: Props) {
           <span class="i-mdi-account-key w-4 h-4 text-accent" />
           <span class="text-accent-strong flex-1 font-heading">
             {mode() === 'email-login' ? 'Sign In' :
-             mode() === 'register' ? 'Register' :
-             mode() === 'magic' ? 'Recovery Email' :
+             mode() === 'register' ? 'Create Account' :
+             mode() === 'magic' ? 'Account Recovery' :
              mode() === 'recover' ? 'Recover Account' :
-             mode() === 'show-recovery-share' ? 'Save Recovery Words' :
+             mode() === 'show-recovery-share' ? 'Recovery Words' :
              'Login'}
           </span>
-          <button
-            onClick={props.onClose}
-            class="btn-win px-2 py-0.5 text-xs"
-          >
-            X
+          <button onClick={() => { if (!loading()) props.onClose() }} class="text-fg-faint hover:text-accent p-1 transition-colors">
+            <span class="i-mdi-close w-4 h-4" />
           </button>
         </div>
 
         {/* Show recovery share after registration */}
         <Show when={mode() === 'show-recovery-share'}>
-          <div style={{ padding: '12px' }}>
+          <div class="p-4">
             <div class="bg-amber-50 border-2 border-amber-700 p-3 mb-3">
-              <p class="text-xs text-amber-800 font-heading font-semibold mb-2">
-                SAVE THESE RECOVERY WORDS
-              </p>
+              <div class="flex items-center gap-1.5 mb-2">
+                <span class="i-mdi-shield-alert w-4 h-4 text-amber-700" />
+                <span class="text-xs text-amber-800 font-heading font-semibold uppercase tracking-wider">Save these words</span>
+              </div>
               <p class="text-[10px] text-fg-muted mb-3">
-                Write these down and store them safely. You'll need them + your email to recover your account if you forget your password.
+                Write these down. You'll need them + your email to recover your account.
               </p>
-              <div class="bg-page border border-edge-soft p-3 font-mono text-xs text-emerald-700" style={{ 'word-break': 'break-word', 'line-height': '1.6' }}>
+              <div class="bg-page border border-edge-soft p-3 font-mono text-xs text-emerald-700 break-words leading-relaxed">
                 {recoveryShare()}
               </div>
               <button
                 onClick={copyRecoveryShare}
-                class={`btn-win w-full mt-2 ${copiedShare() ? 'bg-emerald-100 text-emerald-800' : ''}`}
+                class={`btn-win w-full mt-2 text-[10px] ${copiedShare() ? 'bg-emerald-100 text-emerald-800' : ''}`}
               >
                 {copiedShare() ? 'COPIED!' : 'COPY TO CLIPBOARD'}
               </button>
@@ -351,134 +367,147 @@ export default function AuthModal(props: Props) {
             <button
               onClick={continueAfterRecoveryShare}
               disabled={loading()}
-              class="btn-win primary w-full py-2"
+              class="btn-win primary w-full py-2 text-[10px]"
             >
-              {loading() ? 'LOGGING IN...' : 'I SAVED THEM - CONTINUE'}
+              {loading() ? 'LOGGING IN...' : 'I SAVED THEM — CONTINUE'}
             </button>
           </div>
         </Show>
 
         {/* Regular forms */}
         <Show when={mode() !== 'show-recovery-share'}>
-          <form onSubmit={handleSubmit} style={{ padding: '12px' }}>
+          <form onSubmit={handleSubmit} class="p-4 flex flex-col gap-3">
             {/* Email login — primary flow */}
             <Show when={mode() === 'email-login'}>
-              <div style={{ 'margin-bottom': '12px' }}>
-                <label style={labelStyle}>Email</label>
-                <div style={inputContainerStyle}>
-                  <input
-                    type="email"
-                    style={inputStyle}
-                    placeholder="you@example.com"
-                    value={email()}
-                    onInput={(e) => setEmail(e.currentTarget.value)}
-                    autofocus
-                  />
-                </div>
-                <p class="text-[9px] text-fg-muted mt-1">
+              <div>
+                <label class="block text-[10px] text-fg-muted mb-1 font-heading uppercase tracking-wider">Email</label>
+                <input
+                  type="email"
+                  class="w-full px-3 py-2 bg-page border border-edge-soft text-fg font-mono text-sm outline-none placeholder:text-fg-faint focus:border-accent transition-colors"
+                  placeholder="you@example.com"
+                  value={email()}
+                  onInput={(e) => { setEmail(e.currentTarget.value); clearError() }}
+                  autofocus
+                />
+                <p class="text-[9px] text-fg-faint mt-1">
                   We'll email you a login link. No password needed.
                 </p>
               </div>
             </Show>
 
             <Show when={mode() !== 'magic' && mode() !== 'recover' && mode() !== 'email-login'}>
-              <div style={{ 'margin-bottom': '12px' }}>
-                <label style={labelStyle}>Nickname</label>
-                <div style={inputContainerStyle}>
+              <div>
+                <label class="block text-[10px] text-fg-muted mb-1 font-heading uppercase tracking-wider">Nickname</label>
+                <div class="relative">
                   <input
                     type="text"
-                    style={inputStyle}
+                    class="w-full px-3 py-2 bg-page border border-edge-soft text-fg font-mono text-sm outline-none placeholder:text-fg-faint focus:border-accent transition-colors"
                     placeholder="yourname"
                     value={nickname()}
-                    onInput={(e) => setNickname(e.currentTarget.value)}
+                    onInput={(e) => onNicknameInput(e.currentTarget.value)}
                   />
+                  <Show when={mode() === 'register' && nickname().trim().length >= 3}>
+                    <span class="absolute right-2 top-1/2 -translate-y-1/2">
+                      <Show when={nickChecking()}>
+                        <span class="i-mdi-loading w-3.5 h-3.5 text-fg-faint animate-spin" />
+                      </Show>
+                      <Show when={!nickChecking() && nickAvailable() === true}>
+                        <span class="i-mdi-check-circle w-3.5 h-3.5 text-emerald-600" />
+                      </Show>
+                      <Show when={!nickChecking() && nickAvailable() === false}>
+                        <span class="i-mdi-close-circle w-3.5 h-3.5 text-red-500" />
+                      </Show>
+                    </span>
+                  </Show>
                 </div>
                 <Show when={mode() === 'register'}>
-                  <p class="text-[9px] text-fg-muted mt-1">3-20 chars, letters/numbers/_/-</p>
+                  <p class="text-[9px] mt-1" classList={{ 'text-fg-faint': nickAvailable() !== false, 'text-red-500': nickAvailable() === false }}>
+                    {nickAvailable() === false ? 'Nickname taken' : '3-20 chars, letters/numbers/_/-'}
+                  </p>
                 </Show>
               </div>
 
-              <div style={{ 'margin-bottom': '12px' }}>
-                <label style={labelStyle}>
+              <div>
+                <label class="block text-[10px] text-fg-muted mb-1 font-heading uppercase tracking-wider">
                   Password <span class="text-fg-faint">(local only)</span>
                 </label>
-                <div style={inputContainerStyle}>
+                <div class="relative">
                   <input
-                    type="password"
-                    style={inputStyle}
+                    type={showPassword() ? 'text' : 'password'}
+                    class="w-full px-3 py-2 pr-9 bg-page border border-edge-soft text-fg font-mono text-sm outline-none placeholder:text-fg-faint focus:border-accent transition-colors"
                     placeholder="min 8 characters"
                     value={pin()}
-                    onInput={(e) => setPin(e.currentTarget.value)}
+                    onInput={(e) => { setPin(e.currentTarget.value); clearError() }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword())}
+                    class="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-none text-fg-faint hover:text-fg-muted cursor-pointer p-0 transition-colors"
+                    tabIndex={-1}
+                  >
+                    <span class={`w-3.5 h-3.5 ${showPassword() ? 'i-mdi-eye-off' : 'i-mdi-eye'}`} />
+                  </button>
                 </div>
                 <Show when={mode() === 'register'}>
-                  <p class="text-[9px] text-fg-muted mt-1">Used to derive keys locally. Never sent to server. Cannot be recovered without backup.</p>
+                  <p class="text-[9px] text-fg-faint mt-1">Derives keys locally. Never sent to server.</p>
                 </Show>
               </div>
 
               <Show when={mode() === 'register'}>
-                <div style={{ 'margin-bottom': '12px' }}>
-                  <label style={labelStyle}>
+                <div>
+                  <label class="block text-[10px] text-fg-muted mb-1 font-heading uppercase tracking-wider">
                     Recovery Email <span class="text-fg-faint">(recommended)</span>
                   </label>
-                  <div style={inputContainerStyle}>
-                    <input
-                      type="email"
-                      style={inputStyle}
-                      placeholder="backup@example.com"
-                      value={recoveryEmail()}
-                      onInput={(e) => setRecoveryEmail(e.currentTarget.value)}
-                    />
-                  </div>
-                  <p class="text-[9px] text-fg-muted mt-1">
-                    Enables trustless recovery via Shamir secret sharing.
+                  <input
+                    type="email"
+                    class="w-full px-3 py-2 bg-page border border-edge-soft text-fg font-mono text-sm outline-none placeholder:text-fg-faint focus:border-accent transition-colors"
+                    placeholder="backup@example.com"
+                    value={recoveryEmail()}
+                    onInput={(e) => { setRecoveryEmail(e.currentTarget.value); clearError() }}
+                  />
+                  <p class="text-[9px] text-fg-faint mt-1">
+                    Enables recovery via Shamir secret sharing.
                   </p>
                 </div>
               </Show>
             </Show>
 
-            {/* Magic link / Recovery email request */}
+            {/* Magic link / Recovery */}
             <Show when={mode() === 'magic'}>
-              <div style={{ 'margin-bottom': '12px' }}>
-                <label style={labelStyle}>Recovery Email</label>
-                <div style={inputContainerStyle}>
-                  <input
-                    type="email"
-                    style={inputStyle}
-                    placeholder="you@example.com"
-                    value={email()}
-                    onInput={(e) => setEmail(e.currentTarget.value)}
-                  />
-                </div>
-                <p class="text-[9px] text-fg-muted mt-1">
+              <div>
+                <label class="block text-[10px] text-fg-muted mb-1 font-heading uppercase tracking-wider">Recovery Email</label>
+                <input
+                  type="email"
+                  class="w-full px-3 py-2 bg-page border border-edge-soft text-fg font-mono text-sm outline-none placeholder:text-fg-faint focus:border-accent transition-colors"
+                  placeholder="you@example.com"
+                  value={email()}
+                  onInput={(e) => { setEmail(e.currentTarget.value); clearError() }}
+                />
+                <p class="text-[9px] text-fg-faint mt-1">
                   We'll send you the server's share of your recovery key.
                 </p>
               </div>
 
               <Show when={serverShareHex()}>
-                <div style={{ 'margin-bottom': '12px' }}>
-                  <label style={labelStyle}>Your Nickname</label>
-                  <div style={inputContainerStyle}>
-                    <input
-                      type="text"
-                      style={inputStyle}
-                      placeholder="yourname"
-                      value={nickname()}
-                      onInput={(e) => setNickname(e.currentTarget.value)}
-                    />
-                  </div>
+                <div>
+                  <label class="block text-[10px] text-fg-muted mb-1 font-heading uppercase tracking-wider">Your Nickname</label>
+                  <input
+                    type="text"
+                    class="w-full px-3 py-2 bg-page border border-edge-soft text-fg font-mono text-sm outline-none placeholder:text-fg-faint focus:border-accent transition-colors"
+                    placeholder="yourname"
+                    value={nickname()}
+                    onInput={(e) => { setNickname(e.currentTarget.value); clearError() }}
+                  />
                 </div>
-                <div style={{ 'margin-bottom': '12px' }}>
-                  <label style={labelStyle}>Your Recovery Words</label>
-                  <div style={inputContainerStyle}>
-                    <textarea
-                      style={{ ...inputStyle, 'min-height': '80px', resize: 'vertical' }}
-                      placeholder="word1 word2 word3..."
-                      value={userShareInput()}
-                      onInput={(e) => setUserShareInput(e.currentTarget.value)}
-                    />
-                  </div>
-                  <p class="text-[9px] text-fg-muted mt-1">
+                <div>
+                  <label class="block text-[10px] text-fg-muted mb-1 font-heading uppercase tracking-wider">Your Recovery Words</label>
+                  <textarea
+                    class="w-full px-3 py-2 bg-page border border-edge-soft text-fg font-mono text-sm outline-none placeholder:text-fg-faint focus:border-accent transition-colors resize-y min-h-20"
+                    placeholder="word1 word2 word3..."
+                    value={userShareInput()}
+                    onInput={(e) => { setUserShareInput(e.currentTarget.value); clearError() }}
+                  />
+                  <p class="text-[9px] text-fg-faint mt-1">
                     Enter the recovery words you saved during registration.
                   </p>
                 </div>
@@ -486,13 +515,15 @@ export default function AuthModal(props: Props) {
             </Show>
 
             <Show when={error()}>
-              <div class="bg-red-50 border border-red-200 p-2 mb-2">
+              <div class="flex items-start gap-2 bg-red-50 border border-red-200 p-2.5">
+                <span class="i-mdi-alert-circle w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
                 <p class="text-red-700 text-[10px]">{error()}</p>
               </div>
             </Show>
 
             <Show when={message()}>
-              <div class="bg-emerald-50 border border-emerald-200 p-2 mb-2">
+              <div class="flex items-start gap-2 bg-emerald-50 border border-emerald-200 p-2.5">
+                <span class="i-mdi-check-circle w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
                 <p class="text-emerald-700 text-[10px]">{message()}</p>
               </div>
             </Show>
@@ -500,29 +531,31 @@ export default function AuthModal(props: Props) {
             <button
               type="submit"
               disabled={loading()}
-              class="btn-win primary w-full py-2 mb-3 flex items-center justify-center gap-2"
-              style={{ opacity: loading() ? '0.7' : '1' }}
+              class="btn-win primary w-full py-2.5 flex items-center justify-center gap-2 text-[11px] disabled:opacity-60"
             >
-              {loading() && <span class="animate-spin">*</span>}
+              <Show when={loading()}>
+                <span class="i-mdi-loading w-3.5 h-3.5 animate-spin" />
+              </Show>
               {derivingKeys()
-                ? 'DERIVING...'
+                ? 'Securing locally...'
                 : loading()
-                  ? 'SENDING...'
+                  ? 'Sending...'
                   : mode() === 'email-login'
-                    ? 'SEND LOGIN LINK'
+                    ? 'Send login link'
                     : mode() === 'register'
-                      ? 'CREATE ACCOUNT'
+                      ? 'Create account'
                       : mode() === 'magic'
-                        ? serverShareHex() ? 'RECOVER ACCOUNT' : 'SEND RECOVERY EMAIL'
-                        : 'LOGIN'}
+                        ? serverShareHex() ? 'Recover account' : 'Send recovery email'
+                        : 'Login'}
             </button>
           </form>
 
-          <div class="border-t border-edge-soft px-3 py-2 text-center text-[10px] text-fg-muted">
+          {/* Mode switcher footer */}
+          <div class="border-t border-edge-soft px-4 py-2.5 flex items-center justify-center gap-2 text-[10px]">
             <Show when={mode() === 'email-login'}>
               <button
-                onClick={() => { setMode('login'); setMessage('') }}
-                class="bg-transparent border-none text-fg-muted cursor-pointer text-[10px]"
+                onClick={() => switchMode('login')}
+                class="bg-transparent border-none text-fg-muted hover:text-accent cursor-pointer text-[10px] transition-colors font-heading uppercase tracking-wider"
               >
                 Use password instead
               </button>
@@ -530,49 +563,50 @@ export default function AuthModal(props: Props) {
 
             <Show when={mode() === 'login'}>
               <button
-                onClick={() => { setMode('email-login'); setMessage('') }}
-                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
+                onClick={() => switchMode('email-login')}
+                class="bg-transparent border-none text-accent hover:text-accent-hover cursor-pointer text-[10px] transition-colors font-heading uppercase tracking-wider"
               >
-                Use email link
+                Email link
               </button>
-              <span class="mx-2">|</span>
+              <span class="text-fg-faint">&middot;</span>
               <button
-                onClick={() => setMode('register')}
-                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
+                onClick={() => switchMode('register')}
+                class="bg-transparent border-none text-accent hover:text-accent-hover cursor-pointer text-[10px] transition-colors font-heading uppercase tracking-wider"
               >
                 Register
               </button>
-              <span class="mx-2">|</span>
+              <span class="text-fg-faint">&middot;</span>
               <button
-                onClick={() => setMode('magic')}
-                class="bg-transparent border-none text-fg-muted cursor-pointer text-[10px]"
+                onClick={() => switchMode('magic')}
+                class="bg-transparent border-none text-fg-muted hover:text-accent cursor-pointer text-[10px] transition-colors font-heading uppercase tracking-wider"
               >
-                Forgot password?
+                Forgot?
               </button>
             </Show>
 
             <Show when={mode() === 'register'}>
               <button
-                onClick={() => { setMode('email-login'); setMessage('') }}
-                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
+                onClick={() => switchMode('email-login')}
+                class="bg-transparent border-none text-accent hover:text-accent-hover cursor-pointer text-[10px] transition-colors font-heading uppercase tracking-wider"
               >
-                Use email link
+                Email link
               </button>
-              <span class="mx-2">|</span>
+              <span class="text-fg-faint">&middot;</span>
               <button
-                onClick={() => setMode('login')}
-                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
+                onClick={() => switchMode('login')}
+                class="bg-transparent border-none text-accent hover:text-accent-hover cursor-pointer text-[10px] transition-colors font-heading uppercase tracking-wider"
               >
-                Login
+                Already have an account?
               </button>
             </Show>
 
             <Show when={mode() === 'magic'}>
               <button
-                onClick={() => { setMode('email-login'); setServerShareHex(''); setMessage('') }}
-                class="bg-transparent border-none text-accent cursor-pointer text-[10px]"
+                onClick={() => { switchMode('email-login'); setServerShareHex('') }}
+                class="bg-transparent border-none text-fg-muted hover:text-accent cursor-pointer text-[10px] transition-colors font-heading uppercase tracking-wider flex items-center gap-1"
               >
-                Back
+                <span class="i-mdi-arrow-left w-3 h-3" />
+                Back to login
               </button>
             </Show>
           </div>
