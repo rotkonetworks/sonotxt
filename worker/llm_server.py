@@ -79,7 +79,7 @@ async def chat(req: ChatRequest):
         has_system = any(m.get("role") == "system" for m in req.messages)
         msgs = req.messages if has_system else [{"role": "system", "content": SYSTEM_PROMPT}] + req.messages
         text = tokenizer.apply_chat_template(
-            msgs, tokenize=False, add_generation_prompt=True
+            msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False
         )
         inputs = tokenizer(text, return_tensors="pt").to(model.device)
         t0 = time.time()
@@ -117,7 +117,7 @@ async def chat_sentences(req: ChatRequest):
         has_system = any(m.get("role") == "system" for m in req.messages)
         msgs = req.messages if has_system else [{"role": "system", "content": SYSTEM_PROMPT}] + req.messages
         text = tokenizer.apply_chat_template(
-            msgs, tokenize=False, add_generation_prompt=True
+            msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False
         )
         inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
@@ -149,6 +149,80 @@ async def chat_sentences(req: ChatRequest):
 
         logger.error(f"chat failed: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat_stream")
+async def chat_stream(req: ChatRequest):
+    """Stream sentences as they complete via SSE.
+
+    Emits server-sent events:
+      data: {"event":"sentence","text":"First sentence.","index":0}
+      data: {"event":"sentence","text":"Second sentence.","index":1}
+      data: {"event":"done","full_response":"...","tokens":42,"generation_seconds":1.5}
+
+    The client can start TTS on each sentence immediately without
+    waiting for the full response — cutting perceived latency in half.
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="model not loaded")
+
+    from transformers import TextIteratorStreamer
+    import threading
+
+    has_system = any(m.get("role") == "system" for m in req.messages)
+    msgs = req.messages if has_system else [{"role": "system", "content": SYSTEM_PROMPT}] + req.messages
+    text = tokenizer.apply_chat_template(
+        msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False
+    )
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
+
+    streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+
+    gen_kwargs = dict(
+        **inputs,
+        max_new_tokens=req.max_tokens,
+        temperature=max(req.temperature, 0.01),
+        top_p=req.top_p,
+        top_k=20,
+        do_sample=True,
+        streamer=streamer,
+    )
+
+    # Generate in a background thread (model.generate blocks)
+    t0 = time.time()
+    thread = threading.Thread(target=lambda: model.generate(**gen_kwargs))
+    thread.start()
+
+    async def event_stream():
+        buffer = ""
+        sentence_idx = 0
+        total_tokens = 0
+
+        for chunk in streamer:
+            buffer += chunk
+            total_tokens += 1
+
+            # Check if we have a complete sentence
+            while re.search(r"[.!?]\s", buffer):
+                match = re.search(r"[.!?]\s", buffer)
+                sentence = buffer[: match.end()].strip()
+                buffer = buffer[match.end() :]
+                if sentence:
+                    yield f"data: {json.dumps({'event': 'sentence', 'text': sentence, 'index': sentence_idx})}\n\n"
+                    sentence_idx += 1
+
+        # Flush remaining buffer as final sentence
+        if buffer.strip():
+            yield f"data: {json.dumps({'event': 'sentence', 'text': buffer.strip(), 'index': sentence_idx})}\n\n"
+            sentence_idx += 1
+
+        thread.join()
+        dt = time.time() - t0
+        logger.info(f"chat_stream: {total_tokens} tok -> {sentence_idx} sentences in {dt:.2f}s")
+
+        yield f"data: {json.dumps({'event': 'done', 'sentences': sentence_idx, 'tokens': total_tokens, 'generation_seconds': round(dt, 2)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @app.get("/health")
