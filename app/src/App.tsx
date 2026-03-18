@@ -3,6 +3,8 @@ import { ToastContainer, showToast } from './components/Toast'
 import { useStore } from './lib/store'
 import type { HistoryItem } from './lib/store'
 import * as api from './lib/api'
+import { locale, setLocale, t, LOCALES } from './lib/i18n'
+import type { Locale } from './lib/i18n'
 import type { User, Contact } from './lib/api'
 const VoiceTerminal = lazy(() => import('./components/VoiceTerminal'))
 const TextTerminal = lazy(() => import('./components/TextTerminal'))
@@ -553,6 +555,19 @@ export default function App() {
           </button>
         </Show>
         <div class="flex-1" />
+        <button
+          class="group/nav relative p-2 text-fg-faint hover:text-accent"
+          onClick={() => {
+            const codes = LOCALES.map(l => l.code)
+            const idx = codes.indexOf(locale())
+            setLocale(codes[(idx + 1) % codes.length] as Locale)
+          }}
+        >
+          <span class="i-mdi-translate w-5 h-5" />
+          <span class="absolute left-full ml-1.5 px-2 py-1 bg-surface border border-edge shadow-sm text-[10px] font-heading uppercase tracking-wider whitespace-nowrap opacity-0 group-hover/nav:opacity-100 pointer-events-none transition-opacity z-50">
+            {LOCALES.find(l => l.code === locale())?.native || 'English'}
+          </span>
+        </button>
         <Show when={store.user} fallback={
           <button
             class="group/nav relative p-2 text-fg-faint hover:text-accent"
@@ -560,7 +575,7 @@ export default function App() {
           >
             <span class="i-mdi-login w-5 h-5" />
             <span class="absolute left-full ml-1.5 px-2 py-1 bg-surface border border-edge shadow-sm text-[10px] font-heading uppercase tracking-wider whitespace-nowrap opacity-0 group-hover/nav:opacity-100 pointer-events-none transition-opacity z-50">
-              Sign in
+              {t('nav.signin')}
             </span>
           </button>
         }>

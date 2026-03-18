@@ -1,5 +1,6 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js'
 import type { HistoryItem } from '../lib/store'
+import { t } from '../lib/i18n'
 
 const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
 const SPEECH_URL = import.meta.env.VITE_SPEECH_URL || `${API}/api/voice`
@@ -541,8 +542,8 @@ export default function TextTerminal(props: Props) {
               ref={textareaRef}
               class={`flex-1 w-full p-4 bg-transparent text-fg font-serif text-base sm:text-lg lg:text-xl leading-relaxed resize-none outline-none placeholder:text-fg-faint min-h-[120px] sm:min-h-[200px] ${loading() ? 'opacity-60 cursor-not-allowed' : ''}`}
               placeholder={translateEnabled()
-                ? `Paste text or a URL to translate to ${LANGUAGES.find(l => l.code === targetLang())?.name}...`
-                : 'Paste text or a URL to convert to speech...'
+                ? t('tts.placeholder.translate', { lang: LANGUAGES.find(l => l.code === targetLang())?.name || '' })
+                : t('tts.placeholder')
               }
               value={text()}
               onInput={(e) => setText(e.currentTarget.value)}
@@ -574,8 +575,8 @@ export default function TextTerminal(props: Props) {
                     <div class="flex items-start gap-2">
                       <span class="i-mdi-lightbulb-outline w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
                       <div class="flex-1">
-                        <p class="text-fg text-xs leading-relaxed">Type or paste any text, drop a URL, or try a sample below. Press <kbd class="px-1 py-px bg-surface border border-edge text-[10px] font-mono">Ctrl+Enter</kbd> to generate speech.</p>
-                        <p class="text-fg-faint text-[10px] mt-1">9 voices · 10 languages · free tier: 3000 chars/day</p>
+                        <p class="text-fg text-xs leading-relaxed">{t('tts.onboard')} <kbd class="px-1 py-px bg-surface border border-edge text-[10px] font-mono">Ctrl+Enter</kbd> {t('tts.onboard.press')}</p>
+                        <p class="text-fg-faint text-[10px] mt-1">{t('tts.onboard.meta')}</p>
                       </div>
                       <button
                         class="text-fg-faint hover:text-accent p-0.5 flex-shrink-0"
@@ -958,7 +959,7 @@ export default function TextTerminal(props: Props) {
             >
               <span class="flex items-center gap-2">
                 <span class="i-mdi-stop w-5 h-5" />
-                CANCEL
+                {t('tts.cancel')}
               </span>
             </button>
           </Show>
@@ -987,7 +988,7 @@ export default function TextTerminal(props: Props) {
                   }>
                     <span class="i-mdi-web w-5 h-5" />
                   </Show>
-                  {isUrl() ? 'FETCH & SPEAK' : translateEnabled() ? 'TRANSLATE & SPEAK' : audioUrl() ? 'REGENERATE' : 'GENERATE'}
+                  {isUrl() ? t('tts.fetch_speak') : translateEnabled() ? t('tts.translate_speak') : audioUrl() ? t('tts.regenerate') : t('tts.generate')}
                   {(() => {
                     const words = text().trim().split(/\s+/).filter(Boolean).length
                     return words > 1 && !isUrl() ? <span class="text-[9px] opacity-50 ml-1 hidden sm:inline">{words > 999 ? `${(words / 1000).toFixed(1)}k` : words} words</span> : null
@@ -1006,7 +1007,7 @@ export default function TextTerminal(props: Props) {
             }>
               <span class="flex items-center gap-2">
                 <span class="i-mdi-check w-5 h-5" />
-                DONE
+                {t('tts.done')}
               </span>
             </Show>
           </button>
