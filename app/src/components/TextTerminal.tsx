@@ -35,13 +35,7 @@ const LANGUAGES = [
   { code: 'de', name: 'German' },
   { code: 'pt', name: 'Portuguese' },
   { code: 'ru', name: 'Russian' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'hi', name: 'Hindi' },
-  { code: 'fi', name: 'Finnish' },
-  { code: 'th', name: 'Thai' },
-  { code: 'vi', name: 'Vietnamese' },
   { code: 'it', name: 'Italian' },
-  { code: 'tr', name: 'Turkish' },
 ]
 
 function looksLikeUrl(text: string): boolean {

@@ -13,8 +13,7 @@ const CallPage = lazy(() => import('./components/CallPage'))
 
 const LANG_NAMES: Record<string, string> = {
   en: 'English', zh: 'Chinese', ja: 'Japanese', ko: 'Korean', es: 'Spanish',
-  fr: 'French', de: 'German', pt: 'Portuguese', ru: 'Russian', ar: 'Arabic',
-  hi: 'Hindi', fi: 'Finnish', th: 'Thai', vi: 'Vietnamese', it: 'Italian', tr: 'Turkish',
+  fr: 'French', de: 'German', pt: 'Portuguese', ru: 'Russian', it: 'Italian',
 }
 
 const VOICE_NAMES: Record<string, string> = {
