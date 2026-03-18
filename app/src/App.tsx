@@ -3,7 +3,7 @@ import { ToastContainer, showToast } from './components/Toast'
 import { useStore } from './lib/store'
 import type { HistoryItem } from './lib/store'
 import * as api from './lib/api'
-import { locale, setLocale, t, LOCALES } from './lib/i18n'
+import { locale, setLocale, getSuggestedLocale, dismissLocaleSuggestion, t, LOCALES } from './lib/i18n'
 import type { Locale } from './lib/i18n'
 import type { User, Contact } from './lib/api'
 const VoiceTerminal = lazy(() => import('./components/VoiceTerminal'))
@@ -1283,6 +1283,32 @@ export default function App() {
           </Show>
           <Show when={mode() === 'text'}>
             <div class="flex-1 flex flex-col min-h-0 animate-page-enter">
+              {(() => {
+                const [suggested, setSuggested] = createSignal(getSuggestedLocale())
+                return (
+                  <Show when={suggested()}>
+                    {(s) => (
+                      <div class="flex items-center justify-center gap-3 px-4 py-2 bg-accent-soft/30 border-b border-accent-muted text-xs animate-page-enter">
+                        <span class="i-mdi-translate w-4 h-4 text-accent" />
+                        <span class="text-fg">sonotxt is available in <strong>{s().native}</strong></span>
+                        <button
+                          class="px-2.5 py-1 bg-accent text-white font-heading text-[10px] uppercase tracking-wider hover:bg-accent-hover transition-colors"
+                          onClick={() => { setLocale(s().code); dismissLocaleSuggestion(); setSuggested(null) }}
+                        >
+                          Switch
+                        </button>
+                        <button
+                          class="text-fg-faint hover:text-accent p-0.5 transition-colors"
+                          onClick={() => { dismissLocaleSuggestion(); setSuggested(null) }}
+                          title="Keep English"
+                        >
+                          <span class="i-mdi-close w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </Show>
+                )
+              })()}
               <Suspense fallback={<div class="flex-1 flex items-center justify-center"><div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /></div></div>}>
                 <TextTerminal
                   onHistoryAdd={(item) => actions.addToHistory(item)}

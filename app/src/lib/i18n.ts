@@ -330,7 +330,27 @@ const { locale, setLocale, initFromAccount, t } = createRoot(() => {
   return { locale, setLocale, initFromAccount, t }
 })
 
-export { locale, setLocale, initFromAccount, t }
+/// Returns the browser's language if we support it and it differs from current locale.
+/// Returns null if user already uses their browser language or we don't support it.
+/// Call once on mount to show a one-time "switch to X?" prompt.
+function getSuggestedLocale(): { code: Locale; native: string } | null {
+  // Don't suggest if user already made an explicit choice
+  if (localStorage.getItem('sonotxt_locale')) return null
+  // Don't suggest if already dismissed
+  if (localStorage.getItem('sonotxt_locale_dismissed')) return null
+
+  const browser = navigator.language?.split('-')[0] || ''
+  if (!browser || browser === 'en' || !(browser in translations)) return null
+
+  const loc = LOCALES.find(l => l.code === browser)
+  return loc ? { code: loc.code, native: loc.native } : null
+}
+
+function dismissLocaleSuggestion() {
+  localStorage.setItem('sonotxt_locale_dismissed', '1')
+}
+
+export { locale, setLocale, initFromAccount, getSuggestedLocale, dismissLocaleSuggestion, t }
 export const LOCALES: { code: Locale; name: string; native: string }[] = [
   { code: 'en', name: 'English', native: 'English' },
   { code: 'zh', name: 'Chinese', native: '中文' },
