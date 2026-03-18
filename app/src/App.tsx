@@ -9,6 +9,7 @@ import type { User, Contact } from './lib/api'
 const VoiceTerminal = lazy(() => import('./components/VoiceTerminal'))
 const TextTerminal = lazy(() => import('./components/TextTerminal'))
 const AuthModal = lazy(() => import('./components/AuthModal'))
+const PoolExplorer = lazy(() => import('./components/PoolExplorer'))
 const WalletModal = lazy(() => import('./components/WalletModal'))
 const ProfilePage = lazy(() => import('./components/ProfilePage'))
 const CallPage = lazy(() => import('./components/CallPage'))
@@ -28,9 +29,9 @@ const RATES = [0.75, 1, 1.25, 1.5, 2] as const
 export default function App() {
   const { state: store, actions } = useStore()
 
-  const persistModes = ['chat', 'translate', 'text'] as const
+  const persistModes = ['chat', 'translate', 'text', 'swap'] as const
   const savedMode = sessionStorage.getItem('sonotxt_mode')
-  const [mode, setMode] = createSignal<'chat' | 'translate' | 'text' | 'player' | 'call'>(
+  const [mode, setMode] = createSignal<'chat' | 'translate' | 'text' | 'player' | 'call' | 'swap'>(
     savedMode && (persistModes as readonly string[]).includes(savedMode) ? savedMode as any : 'text'
   )
   const [callCode, setCallCode] = createSignal<string | undefined>()
@@ -515,6 +516,7 @@ export default function App() {
           { id: 'chat' as const, icon: 'i-mdi-microphone', label: 'Voice', key: '2' },
           { id: 'translate' as const, icon: 'i-mdi-translate', label: 'Translate', key: '3' },
           { id: 'call' as const, icon: 'i-mdi-phone', label: 'Call', key: '4' },
+          { id: 'swap' as const, icon: 'i-mdi-swap-horizontal', label: 'Swap', key: '5' },
         ]).map(item => (
           <button
             class={`group/nav relative w-full flex items-center justify-center py-2 transition-colors ${
@@ -1324,6 +1326,13 @@ export default function App() {
             <div class="flex-1 flex flex-col min-h-0 animate-page-enter">
               <Suspense fallback={<div class="flex-1 flex items-center justify-center"><div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /></div></div>}>
                 <CallPage code={callCode()} fromLang={callFromLang()} toLang={callToLang()} onClose={() => { setMode('text'); window.history.replaceState({}, '', '/') }} />
+              </Suspense>
+            </div>
+          </Show>
+          <Show when={mode() === 'swap'}>
+            <div class="flex-1 flex flex-col min-h-0 animate-page-enter">
+              <Suspense fallback={<div class="flex-1 flex items-center justify-center"><div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /><span class="w-1.5 h-1.5 bg-accent rounded-full loading-dot" /></div></div>}>
+                <PoolExplorer />
               </Suspense>
             </div>
           </Show>
