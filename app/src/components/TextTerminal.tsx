@@ -568,19 +568,39 @@ export default function TextTerminal(props: Props) {
               readOnly={loading()}
             />
             <Show when={!text().trim() && !loading() && !audioUrl()}>
-              <div class="flex flex-wrap gap-1.5 px-4 pb-3 -mt-2">
-                {([
-                  'The quick brown fox jumps over the lazy dog near the riverbank.',
-                  'In a hole in the ground there lived a hobbit.',
-                  'To be, or not to be, that is the question.',
-                ] as const).map(sample => (
-                  <button
-                    class="px-2.5 py-1 text-[10px] text-fg-faint hover:text-accent bg-page border border-edge-soft hover:border-accent-muted font-serif transition-colors"
-                    onClick={() => { setText(sample); requestAnimationFrame(() => textareaRef?.focus()) }}
-                  >
-                    {sample.slice(0, 50)}{sample.length > 50 ? '...' : ''}
-                  </button>
-                ))}
+              <div class="px-4 pb-3 -mt-2">
+                <Show when={!localStorage.getItem('sonotxt_onboarded')}>
+                  <div class="mb-3 p-3 bg-accent-soft/30 border border-accent-muted text-sm">
+                    <div class="flex items-start gap-2">
+                      <span class="i-mdi-lightbulb-outline w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
+                      <div class="flex-1">
+                        <p class="text-fg text-xs leading-relaxed">Type or paste any text, drop a URL, or try a sample below. Press <kbd class="px-1 py-px bg-surface border border-edge text-[10px] font-mono">Ctrl+Enter</kbd> to generate speech.</p>
+                        <p class="text-fg-faint text-[10px] mt-1">9 voices · 10 languages · free tier: 3000 chars/day</p>
+                      </div>
+                      <button
+                        class="text-fg-faint hover:text-accent p-0.5 flex-shrink-0"
+                        onClick={() => localStorage.setItem('sonotxt_onboarded', '1')}
+                        title="Dismiss"
+                      >
+                        <span class="i-mdi-close w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </Show>
+                <div class="flex flex-wrap gap-1.5">
+                  {([
+                    'The quick brown fox jumps over the lazy dog near the riverbank.',
+                    'In a hole in the ground there lived a hobbit.',
+                    'To be, or not to be, that is the question.',
+                  ] as const).map(sample => (
+                    <button
+                      class="px-2.5 py-1 text-[10px] text-fg-faint hover:text-accent bg-page border border-edge-soft hover:border-accent-muted font-serif transition-colors"
+                      onClick={() => { setText(sample); localStorage.setItem('sonotxt_onboarded', '1'); requestAnimationFrame(() => textareaRef?.focus()) }}
+                    >
+                      {sample.slice(0, 50)}{sample.length > 50 ? '...' : ''}
+                    </button>
+                  ))}
+                </div>
               </div>
             </Show>
             <Show when={text().length > 0}>
@@ -929,18 +949,31 @@ export default function TextTerminal(props: Props) {
           </For>
         </div>
 
-        {/* Generate button */}
-        <div class="flex items-center justify-center px-6 py-3">
+        {/* Generate / Cancel button */}
+        <div class="flex items-center justify-center gap-3 px-6 py-3">
+          <Show when={loading()}>
+            <button
+              class="px-6 py-2.5 font-heading text-xs uppercase tracking-wider transition-all border-2 bg-red-600 border-red-800 text-white hover:bg-red-700 active:scale-95 shadow-[var(--shadow)]"
+              onClick={cancelGeneration}
+            >
+              <span class="flex items-center gap-2">
+                <span class="i-mdi-stop w-5 h-5" />
+                CANCEL
+              </span>
+            </button>
+          </Show>
           <button
             class={`px-8 py-2.5 font-heading text-xs uppercase tracking-wider transition-all border-2 ${
               genDone()
                 ? 'bg-emerald-600 border-emerald-800 text-white shadow-[var(--shadow)]'
-                : loading() || !text().trim()
+                : loading()
+                ? 'bg-page border-accent/40 text-fg-faint'
+                : !text().trim()
                 ? 'bg-page border-edge-soft text-fg-faint cursor-not-allowed'
                 : 'bg-accent border-accent-strong text-white hover:bg-accent-hover active:scale-95 shadow-[var(--shadow)]'
             }`}
-            disabled={loading() || !text().trim()}
-            onClick={generate}
+            disabled={!text().trim() && !loading()}
+            onClick={() => loading() ? cancelGeneration() : generate()}
           >
             <Show when={genDone()} fallback={
               <Show when={loading()} fallback={
@@ -967,8 +1000,9 @@ export default function TextTerminal(props: Props) {
                 <span class="flex items-center gap-2">
                   <span class="i-mdi-loading w-5 h-5 animate-spin" />
                   {status()}
-              </span>
-            </Show>
+                  <span class="text-[9px] opacity-60">{genElapsed()}s</span>
+                </span>
+              </Show>
             }>
               <span class="flex items-center gap-2">
                 <span class="i-mdi-check w-5 h-5" />
