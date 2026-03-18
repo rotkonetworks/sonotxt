@@ -277,22 +277,43 @@ const translations: Record<Locale, Record<string, string>> = {
   },
 }
 
+/// Priority: explicit localStorage > URL ?lang= > default English.
+/// We do NOT auto-detect from browser locale — nobody wants their UI
+/// randomly localized because they're traveling.
 function detectLocale(): Locale {
+  // 1. Explicit user choice (from settings or language picker)
   const stored = localStorage.getItem('sonotxt_locale')
   if (stored && stored in translations) return stored as Locale
 
-  const browser = navigator.language?.split('-')[0] || 'en'
-  return (browser in translations ? browser : 'en') as Locale
+  // 2. URL param: sonotxt.com?lang=ja (for shared links)
+  const params = new URLSearchParams(window.location.search)
+  const urlLang = params.get('lang')
+  if (urlLang && urlLang in translations) return urlLang as Locale
+
+  // 3. Default: English. No browser sniffing.
+  return 'en'
 }
 
 // Reactive i18n store
-const { locale, setLocale, t } = createRoot(() => {
+const { locale, setLocale, initFromAccount, t } = createRoot(() => {
   const [locale, setLocaleSignal] = createSignal<Locale>(detectLocale())
+
+  // Set document lang on init
+  document.documentElement.lang = detectLocale()
 
   function setLocale(l: Locale) {
     setLocaleSignal(l)
     localStorage.setItem('sonotxt_locale', l)
     document.documentElement.lang = l
+  }
+
+  /// Called after login — loads locale from account if user hasn't set one locally.
+  function initFromAccount(accountLocale?: string) {
+    // Only apply account locale if user hasn't explicitly chosen one
+    if (!localStorage.getItem('sonotxt_locale') && accountLocale && accountLocale in translations) {
+      setLocaleSignal(accountLocale as Locale)
+      document.documentElement.lang = accountLocale
+    }
   }
 
   function t(key: string, params?: Record<string, string | number>): string {
@@ -306,10 +327,10 @@ const { locale, setLocale, t } = createRoot(() => {
     return str
   }
 
-  return { locale, setLocale, t }
+  return { locale, setLocale, initFromAccount, t }
 })
 
-export { locale, setLocale, t }
+export { locale, setLocale, initFromAccount, t }
 export const LOCALES: { code: Locale; name: string; native: string }[] = [
   { code: 'en', name: 'English', native: 'English' },
   { code: 'zh', name: 'Chinese', native: '中文' },
