@@ -519,13 +519,10 @@ export default function CallPage(props: Props) {
   async function processAndSend(blob: Blob) {
     setProcessing(true)
     try {
-      // 1. ASR
+      // 1. ASR — decode webm→WAV in browser (no ffmpeg needed server-side)
       setPhase('Transcribing')
-      const buf = await blob.arrayBuffer()
-      const bytes = new Uint8Array(buf)
-      let binary = ''
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-      const audio_base64 = btoa(binary)
+      const { blobToWavBase64 } = await import('../lib/audioEncode')
+      const audio_base64 = await blobToWavBase64(blob)
 
       const asrRes = await fetch(`${API}/api/voice/transcribe`, {
         method: 'POST',

@@ -191,7 +191,7 @@ export default function VoiceTerminal(props: Props) {
   }
 
   async function startRecording() {
-    if (recording() || processing() || editingIdx() !== null) return
+    if (recording() || editingIdx() !== null) return
     // Reset any pending confirm-clear state
     if (confirmClear()) { setConfirmClear(false); if (clearTimer) { clearTimeout(clearTimer); clearTimer = undefined } }
     // Stop any replay to prevent mic from picking up playback audio
@@ -278,11 +278,8 @@ export default function VoiceTerminal(props: Props) {
     const t0 = performance.now()
     try {
       setPhase('asr')
-      const buf = await blob.arrayBuffer()
-      const bytes = new Uint8Array(buf)
-      let binary = ''
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-      const audio_base64 = btoa(binary)
+      const { blobToWavBase64 } = await import('../lib/audioEncode')
+      const audio_base64 = await blobToWavBase64(blob)
       const ar = await fetch(`${API}/api/voice/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -437,42 +434,62 @@ export default function VoiceTerminal(props: Props) {
     }
   }
 
-  // Speak sentences and return combined audio blob URL
+  // Speak sentences with pipelined TTS — prefetch next while playing current.
+  // No gap between sentences because audio N+1 is ready before audio N finishes.
   async function speakAndCapture(sentences: string[], language: string, signal?: AbortSignal): Promise<{ audioUrl: string; ttsMs: number[]; partial: boolean }> {
     const ttsMs: number[] = []
     const audioBuffers: ArrayBuffer[] = []
     let cancelled = false
 
-    for (let i = 0; i < sentences.length; i++) {
-      if (signal?.aborted) { cancelled = true; break }
-      setPhase('tts')
+    // Prefetch TTS for a sentence → returns ArrayBuffer
+    async function fetchTts(text: string): Promise<ArrayBuffer | null> {
       const ts = performance.now()
-      let tr: Response
       try {
-        tr = await fetch(`${API}/api/voice/synthesize`, {
+        const tr = await fetch(`${API}/api/voice/synthesize`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: sentences[i], speaker: speaker(), language }),
+          body: JSON.stringify({ text, speaker: speaker(), language }),
           signal,
         })
+        if (!tr.ok) { ttsMs.push(Math.round(performance.now() - ts)); return null }
+        const ttsData = await tr.json()
+        let binary: string
+        try { binary = atob(ttsData.audio_base64) } catch { ttsMs.push(Math.round(performance.now() - ts)); return null }
+        const buf = new ArrayBuffer(binary.length)
+        const view = new Uint8Array(buf)
+        for (let j = 0; j < binary.length; j++) view[j] = binary.charCodeAt(j)
+        ttsMs.push(Math.round(performance.now() - ts))
+        return buf
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') { cancelled = true; break }
-        throw err
+        if (err instanceof DOMException && err.name === 'AbortError') { cancelled = true }
+        return null
       }
-      if (!tr.ok) { ttsMs.push(Math.round(performance.now() - ts)); continue }
-      const ttsData = await tr.json()
-      let binary: string
-      try { binary = atob(ttsData.audio_base64) } catch { ttsMs.push(Math.round(performance.now() - ts)); continue }
-      const buf = new ArrayBuffer(binary.length)
-      const view = new Uint8Array(buf)
-      for (let j = 0; j < binary.length; j++) view[j] = binary.charCodeAt(j)
-      ttsMs.push(Math.round(performance.now() - ts))
+    }
+
+    // Start fetching first sentence immediately
+    let nextFetch: Promise<ArrayBuffer | null> | null = sentences.length > 0 ? fetchTts(sentences[0]) : null
+
+    for (let i = 0; i < sentences.length; i++) {
+      if (signal?.aborted || cancelled) { cancelled = true; break }
+
+      // Wait for current sentence's audio (already fetching)
+      setPhase('tts')
+      const buf = await nextFetch
+      nextFetch = null
+
+      // Start prefetching NEXT sentence while we play this one
+      if (i + 1 < sentences.length && !signal?.aborted) {
+        nextFetch = fetchTts(sentences[i + 1])
+      }
+
+      if (!buf) continue
       audioBuffers.push(buf)
+
       if (signal?.aborted) { cancelled = true; break }
       setPhase('play')
       await playAudioBuffer(buf)
     }
 
-    // Combine into one blob for replay (skip if all sentences failed)
+    // Combine into one blob for replay
     let audioUrl = ''
     if (audioBuffers.length > 0) {
       const totalLen = audioBuffers.reduce((s, b) => s + b.byteLength, 0)

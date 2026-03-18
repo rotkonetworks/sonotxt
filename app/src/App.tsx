@@ -510,9 +510,9 @@ export default function App() {
         </button>
         <div class="w-6 border-t border-edge-soft my-1.5" />
         {([
-          { id: 'chat' as const, icon: 'i-mdi-microphone', label: 'Voice', key: '1' },
-          { id: 'translate' as const, icon: 'i-mdi-translate', label: 'Translate', key: '2' },
-          { id: 'text' as const, icon: 'i-mdi-volume-high', label: 'TTS', key: '3' },
+          { id: 'text' as const, icon: 'i-mdi-file-document-outline', label: 'TTS', key: '1' },
+          { id: 'chat' as const, icon: 'i-mdi-microphone', label: 'Voice', key: '2' },
+          { id: 'translate' as const, icon: 'i-mdi-translate', label: 'Translate', key: '3' },
           { id: 'call' as const, icon: 'i-mdi-phone', label: 'Call', key: '4' },
         ]).map(item => (
           <button
@@ -605,6 +605,16 @@ export default function App() {
         </Show>
         <button
           class={`relative flex flex-col items-center gap-0.5 py-1.5 px-3 transition-all active:scale-90 ${
+            mode() === 'text' ? 'text-accent' : 'text-fg-faint active:text-accent'
+          }`}
+          onClick={() => setMode('text')}
+        >
+          <span class="i-mdi-file-document-outline w-5 h-5" />
+          <span class="text-[9px] font-heading uppercase tracking-wider">TTS</span>
+          <Show when={mode() === 'text'}><span class="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-accent rounded-b" /></Show>
+        </button>
+        <button
+          class={`relative flex flex-col items-center gap-0.5 py-1.5 px-3 transition-all active:scale-90 ${
             mode() === 'chat' ? 'text-accent' : 'text-fg-faint active:text-accent'
           }`}
           onClick={() => setMode('chat')}
@@ -628,16 +638,6 @@ export default function App() {
           <Show when={voiceRecording() && mode() !== 'translate'}>
             <span class="absolute top-0.5 right-2 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
           </Show>
-        </button>
-        <button
-          class={`relative flex flex-col items-center gap-0.5 py-1.5 px-3 transition-all active:scale-90 ${
-            mode() === 'text' ? 'text-accent' : 'text-fg-faint active:text-accent'
-          }`}
-          onClick={() => setMode('text')}
-        >
-          <span class="i-mdi-volume-high w-5 h-5" />
-          <span class="text-[9px] font-heading uppercase tracking-wider">TTS</span>
-          <Show when={mode() === 'text'}><span class="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-accent rounded-b" /></Show>
         </button>
         <button
           class={`relative flex flex-col items-center gap-0.5 py-1.5 px-3 transition-all active:scale-90 ${
@@ -1148,7 +1148,7 @@ export default function App() {
               mode() === 'player' && activeItem()?.type === 'translate' ? 'text-purple-500' :
               mode() === 'player' && activeItem()?.type === 'speech' ? 'text-accent' : 'text-fg-faint'
             } ${
-              mode() === 'chat' ? 'i-mdi-microphone' : mode() === 'translate' ? 'i-mdi-translate' : mode() === 'text' ? 'i-mdi-volume-high' : mode() === 'call' ? 'i-mdi-phone' : 'i-mdi-play-circle'
+              mode() === 'text' ? 'i-mdi-file-document-outline' : mode() === 'chat' ? 'i-mdi-microphone' : mode() === 'translate' ? 'i-mdi-translate' : mode() === 'call' ? 'i-mdi-phone' : 'i-mdi-play-circle'
             }`} />
             <span class="hidden sm:inline text-[10px] text-fg-faint font-heading uppercase tracking-wider">
               {mode() === 'chat' ? 'Voice' : mode() === 'translate' ? 'Translate' : mode() === 'text' ? 'Text to speech' : mode() === 'call' ? 'Call' : mode() === 'player' ? 'Player' : ''}
