@@ -1,30 +1,37 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title TXT — sonotxt utility token (upgradeable via ERC1967 proxy)
-/// @notice ERC20 + payment channels + burn-on-spend economics.
-///
-///   Two-token model:
-///   - SONO: governance token, native Asset Hub asset (pallet-assets),
-///     accessible in Solidity via ERC20 precompile. Fixed 10M supply.
-///   - TXT: utility token (this contract), burned on inference spend.
+/// @title SONO — sonotxt marketplace token (upgradeable via ERC1967 proxy)
+/// @notice Single-token design: SONO is the utility token, governance token, and
+///   value-accrual mechanism. No intermediate credit token.
 ///
 ///   Economic flow:
-///   1. Users buy TXT with DOT, USDC, USDT, or SONO
-///   2. Users open payment channel, locking TXT
+///   1. Users buy SONO with DOT or stablecoins (USDC, USDT)
+///   2. Users open payment channel to a provider, locking SONO
 ///   3. Provider delivers inference off-chain, signs receipts
-///   4. Settlement: 90% of spent TXT burned, 10% to staker reward pool
-///   5. Providers set their own prices in TXT per service
+///   4. Settlement splits spent SONO:
+///      - Provider receives (100% - platformCut) — their earnings
+///      - Platform cut (default 20%):
+///        - 90% burned (permanent supply reduction)
+///        - 10% to staker reward pool
 ///
-///   SONO staking:
-///   - Stakers earn pro-rata share of 10% treasury from all inference spend
-///   - Providers stake SONO to register on marketplace
-///   - As TXT burns reduce supply, SONO→TXT exchange rate improves naturally
+///   Example: $10 inference (1000 SONO at $0.01), 20% platform cut:
+///     Provider:  800 SONO ($8.00) — sell for DOT/USDT or restake
+///     Burned:    180 SONO ($1.80) — permanent deflation
+///     Stakers:    20 SONO ($0.20) — staking yield
+///
+///   Staking:
+///   - Stake SONO to earn share of settlement fees
+///   - Providers must stake minimum SONO to register
+///   - More usage → more burns → less supply → SONO appreciates
+///   - Single token: stake what you earn, earn what you stake
+///
+///   Price displayed in USD, settled in SONO. Users see "$0.16 for 10k chars"
+///   and the wallet handles the conversion. Like ETH gas.
 
 /// Known precompile addresses (pallet-assets ERC20):
-///   USDC  (asset 1337):       0x0000053900000000000000000000000001200000
-///   USDT  (asset 1984):       0x000007c000000000000000000000000001200000
-///   SONO  (asset 50000445): 0x02faf23d00000000000000000000000001200000
+///   USDC  (asset 1337):     0x0000053900000000000000000000000001200000
+///   USDT  (asset 1984):     0x000007c000000000000000000000000001200000
 
 /// @dev Minimal ERC20 interface for calling pallet-assets precompiles
 interface IERC20 {
@@ -36,7 +43,7 @@ interface IERC20 {
 
 contract SonoToken {
     string public constant name = "sonotxt";
-    string public constant symbol = "TXT";
+    string public constant symbol = "SONO";
     uint8 public constant decimals = 10;
 
     // ===================== V1 Storage (DO NOT REORDER) =====================
@@ -53,12 +60,12 @@ contract SonoToken {
     struct PayToken {
         bool accepted;
         uint8 tokenDecimals;
-        uint256 txtPerToken;
+        uint256 sonoPerToken; // how many SONO per 1 full token unit
     }
 
     mapping(address => PayToken) public payTokens;
     address[] public payTokenList;
-    uint256 public txtPerDot;
+    uint256 public sonoPerDot; // how many SONO (10 dec) per 1 DOT (18 dec)
 
     struct Channel {
         uint256 deposit;
@@ -69,60 +76,70 @@ contract SonoToken {
 
     mapping(bytes32 => Channel) public channels;
 
-    // ===================== V2 Storage (appended for upgrade) =====================
+    // ===================== V2 Storage =====================
 
-    /// @notice Treasury receives 20% of spent TXT on settlement
     address public treasury;
-
-    /// @notice Burn percentage in basis points (default 8000 = 80%)
-    uint16 public burnBps;
-
-    /// @notice Cumulative TXT burned from inference spend
+    uint16 public burnBps;          // burn % of platform cut (default 9000 = 90%)
     uint256 public totalBurned;
 
-    /// @notice SONO pallet-assets ERC20 precompile address
-    address public sonoToken;
-
-    /// @notice SONO staked per address (users + providers)
-    mapping(address => uint256) public sonoStaked;
-
-    /// @notice Total SONO staked across all users
-    uint256 public totalSonoStaked;
-
-    /// @notice Accumulated TXT in treasury available for staker claims
-    uint256 public treasuryPool;
-
-    /// @notice Cumulative reward per SONO staked (scaled by 1e18 for precision)
+    // Staking uses internal balances (same token)
+    mapping(address => uint256) public staked;
+    uint256 public totalStaked;
+    uint256 public treasuryPool;    // accumulated SONO for staker claims
     uint256 public rewardPerTokenStored;
-
-    /// @notice Per-user snapshot of rewardPerToken at last claim/stake/unstake
     mapping(address => uint256) public userRewardPerToken;
-
-    /// @notice Per-user unclaimed TXT rewards
     mapping(address => uint256) public rewards;
 
-    /// @notice Registered inference providers
+    /// Registered inference providers
     struct Provider {
         bool registered;
-        uint256 staked;        // SONO staked to register
-        uint256 totalServed;   // cumulative TXT worth of inference served
+        uint256 stakedAtRegistration;
+        uint256 totalServed;
     }
     mapping(address => Provider) public providers;
-
-    /// @notice Minimum SONO stake to register as a provider
     uint256 public minProviderStake;
 
-    /// @notice On-chain price commitments: hash → committed
+    /// On-chain price commitments
     mapping(bytes32 => bool) public priceCommitments;
 
-    /// @notice Governance contract that can lock stakers during active proposals
     address public governance;
-
-    /// @notice Per-user unstake lock: blocked until this timestamp
     mapping(address => uint64) public unstakeLockUntil;
-
-    /// @notice V2 initialized flag
     bool private _v2Initialized;
+
+    /// @notice Dedicated oracle address — can only call setDotPrice.
+    ///   Separate from owner so governance can own the contract
+    ///   while the oracle updates prices in real-time.
+    address public oracle;
+
+    // ===================== V3 Storage =====================
+
+    /// Protocol fee on purchases in bps (default 100 = 1%)
+    uint16 public protocolFeeBps;
+
+    /// Accumulated protocol fees per payment token
+    mapping(address => uint256) public protocolFees;
+
+    /// SONO price in USDT micro-units (6 dec). 10000 = $0.01
+    uint256 public sonoPriceUsdt;
+
+    /// Platform cut from settlements in bps (default 2000 = 20%)
+    uint16 public platformCutBps;
+
+    /// Cumulative SONO paid to providers
+    uint256 public totalProviderEarnings;
+
+    /// @notice Model offerings: provider → modelId → price per 1000 units (in SONO, 10 dec)
+    ///   modelId is bytes32: keccak256 of model name (e.g. keccak256("qwen3-tts"))
+    ///   price 0 = model not offered by this provider
+    mapping(address => mapping(bytes32 => uint256)) public modelPrice;
+
+    /// @notice Model list per provider (for enumeration)
+    mapping(address => bytes32[]) public providerModels;
+
+    /// @notice Global model registry: modelId → human-readable name
+    mapping(bytes32 => string) public modelNames;
+
+    bool private _v3Initialized;
 
     // ===================== Events =====================
 
@@ -133,35 +150,26 @@ contract SonoToken {
     event ChannelClosing(bytes32 indexed channelId, address indexed initiator, uint256 spent, uint64 expiresAt);
     event ChannelSettled(bytes32 indexed channelId, address indexed user, address indexed service, uint256 spent, uint256 refunded);
     event ChannelDisputed(bytes32 indexed channelId, uint256 newSpent, uint64 newNonce);
-    event DotPriceUpdated(uint256 txtPerDot);
-    event TokenRateUpdated(address indexed token, uint256 txtPerToken);
-    event BoughtWithDot(address indexed buyer, uint256 dotAmount, uint256 txtAmount);
-    event BoughtWithToken(address indexed buyer, address indexed token, uint256 tokenAmount, uint256 txtAmount);
-    event SoldForDot(address indexed seller, uint256 txtAmount, uint256 dotAmount);
-
-    // V2 events
-    event TxtBurned(uint256 burned, uint256 toTreasury, uint256 newTotalBurned);
-    event SonoStaked(address indexed user, uint256 amount, uint256 total);
-    event SonoUnstaked(address indexed user, uint256 amount, uint256 total);
+    event TokenRateUpdated(address indexed token, uint256 sonoPerToken);
+    event BoughtWithToken(address indexed buyer, address indexed token, uint256 tokenAmount, uint256 sonoAmount);
+    event SonoBurned(uint256 burned, uint256 newTotalBurned);
+    event ProtocolFeeCollected(address indexed token, uint256 amount);
+    event ProviderPaid(address indexed provider, uint256 amount);
+    event Staked(address indexed user, uint256 amount, uint256 total);
+    event Unstaked(address indexed user, uint256 amount, uint256 total);
     event ProviderRegistered(address indexed provider, uint256 staked);
     event ProviderUnregistered(address indexed provider, uint256 unstaked);
     event PriceCommitted(address indexed provider, bytes32 indexed priceHash);
     event PriceRevoked(address indexed provider, bytes32 indexed priceHash);
     event RewardClaimed(address indexed user, uint256 amount);
     event TreasuryDistributed(uint256 amount, uint256 rewardPerToken);
+    event ModelRegistered(bytes32 indexed modelId, string name);
+    event ModelPriceSet(address indexed provider, bytes32 indexed modelId, uint256 pricePerKUnit);
 
     // ===================== Modifiers =====================
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "not owner");
-        _;
-    }
-
-    modifier whenNotPaused() {
-        require(!paused, "paused");
-        _;
-    }
-
+    modifier onlyOwner() { require(msg.sender == owner, "not owner"); _; }
+    modifier whenNotPaused() { require(!paused, "paused"); _; }
     modifier nonReentrant() {
         require(!_reentrancyLock, "reentrant");
         _reentrancyLock = true;
@@ -171,7 +179,6 @@ contract SonoToken {
 
     constructor() { _initialized = true; }
 
-    /// @notice V1 Initialize (called once via proxy delegatecall)
     function initialize(uint256 initialSupply) external {
         require(!_initialized, "already initialized");
         _initialized = true;
@@ -180,173 +187,155 @@ contract SonoToken {
         _mint(msg.sender, initialSupply);
     }
 
-    /// @notice V2 Initialize — called once after upgrading from V1
-    /// @param _treasury Address that receives 20% of burned TXT
-    /// @param _sonoToken SONO ERC20 precompile address on Asset Hub
-    function initializeV2(address _treasury, address _sonoToken) external onlyOwner {
+    function initializeV2(address _treasury) external onlyOwner {
         require(!_v2Initialized, "v2 already initialized");
         _v2Initialized = true;
         treasury = _treasury;
-        sonoToken = _sonoToken;
-        burnBps = 9000; // 90% burn, 10% treasury
-        minProviderStake = 1000 * 1e10; // 1000 SONO (10 decimals)
+        burnBps = 9000;
+        minProviderStake = 1000 * 1e10; // 1000 SONO
     }
 
-    // ===================== Buy TXT =====================
+    function initializeV3(
+        uint256 _sonoPriceUsdt,
+        uint16 _protocolFeeBps,
+        uint16 _platformCutBps,
+        address _usdc,
+        address _usdt
+    ) external onlyOwner {
+        require(!_v3Initialized, "v3 already initialized");
+        require(_sonoPriceUsdt > 0, "zero price");
+        require(_protocolFeeBps <= 500, "max 5%");
+        require(_platformCutBps <= 5000, "max 50%");
+        _v3Initialized = true;
 
-    /// @notice Buy TXT with DOT (native token)
-    function buyWithDot() external payable whenNotPaused nonReentrant {
-        require(txtPerDot > 0, "dot price not set");
-        require(msg.value > 0, "zero payment");
-        uint256 txtAmount = msg.value * txtPerDot / 1e18;
-        require(txtAmount > 0, "amount too small");
-        require(balanceOf[owner] >= txtAmount, "insufficient reserve");
-        balanceOf[owner] -= txtAmount;
-        balanceOf[msg.sender] += txtAmount;
-        emit Transfer(owner, msg.sender, txtAmount);
-        emit BoughtWithDot(msg.sender, msg.value, txtAmount);
+        sonoPriceUsdt = _sonoPriceUsdt;
+        protocolFeeBps = _protocolFeeBps;
+        platformCutBps = _platformCutBps;
+
+        // Set stablecoin rates: sonoPerStable = 1e16 / sonoPriceUsdt
+        uint256 sonoPerStable = 1e16 / _sonoPriceUsdt;
+        _setTokenRate(_usdc, sonoPerStable, 6);
+        _setTokenRate(_usdt, sonoPerStable, 6);
     }
 
-    /// @notice Buy TXT with any accepted ERC20 token (USDC, USDT, SONO)
+    // ===================== Buy SONO =====================
+    // DOT→SONO: use AssetConversion pool directly (on-chain AMM, no oracle)
+    // USDT/USDC→SONO: fixed rate below (deterministic, no oracle)
+
+    /// @notice Buy SONO with any accepted ERC20 token (USDC, USDT)
     function buyWithToken(address token, uint256 amount) external whenNotPaused nonReentrant {
         PayToken storage pt = payTokens[token];
         require(pt.accepted, "token not accepted");
-        require(pt.txtPerToken > 0, "rate not set");
+        require(pt.sonoPerToken > 0, "rate not set");
         require(amount > 0, "zero amount");
 
-        uint256 txtAmount = amount * pt.txtPerToken / (10 ** pt.tokenDecimals);
-        require(txtAmount > 0, "amount too small");
-        require(balanceOf[owner] >= txtAmount, "insufficient reserve");
+        uint256 fee = protocolFeeBps > 0 ? amount * protocolFeeBps / 10000 : 0;
+        uint256 netAmount = amount - fee;
+        uint256 sonoAmount = netAmount * pt.sonoPerToken / (10 ** pt.tokenDecimals);
+        require(sonoAmount > 0, "amount too small");
+        require(balanceOf[owner] >= sonoAmount, "insufficient reserve");
 
         bool ok = IERC20(token).transferFrom(msg.sender, address(this), amount);
         require(ok, "token transfer failed");
 
-        balanceOf[owner] -= txtAmount;
-        balanceOf[msg.sender] += txtAmount;
-        emit Transfer(owner, msg.sender, txtAmount);
-        emit BoughtWithToken(msg.sender, token, amount, txtAmount);
+        if (fee > 0) {
+            protocolFees[token] += fee;
+            emit ProtocolFeeCollected(token, fee);
+        }
+
+        balanceOf[owner] -= sonoAmount;
+        balanceOf[msg.sender] += sonoAmount;
+        emit Transfer(owner, msg.sender, sonoAmount);
+        emit BoughtWithToken(msg.sender, token, netAmount, sonoAmount);
     }
 
-    /// @notice Sell TXT back for DOT
-    function sellForDot(uint256 txtAmount) external whenNotPaused nonReentrant {
-        require(txtPerDot > 0, "dot price not set");
-        require(txtAmount > 0, "zero amount");
-        require(balanceOf[msg.sender] >= txtAmount, "insufficient balance");
-        uint256 dotAmount = txtAmount * 1e18 / txtPerDot;
-        require(dotAmount > 0, "amount too small");
-        require(address(this).balance >= dotAmount, "insufficient liquidity");
-        balanceOf[msg.sender] -= txtAmount;
-        balanceOf[owner] += txtAmount;
-        emit Transfer(msg.sender, owner, txtAmount);
-        (bool ok,) = msg.sender.call{value: dotAmount}("");
-        require(ok, "transfer failed");
-        emit SoldForDot(msg.sender, txtAmount, dotAmount);
-    }
+    // sellForDot removed — use AssetConversion pool (SONO→DOT swap) instead.
+    // No admin-controlled price, no reserve risk. The AMM IS the market.
 
-    // ===================== SONO Staking =====================
+    // ===================== Staking =====================
 
-    /// @notice Stake SONO to earn share of 10% treasury from inference spend.
-    ///   Rewards come from real revenue — the treasury portion of settled channels.
-    ///   Additionally, as TXT gets burned (90%), remaining supply shrinks,
-    ///   so SONO→TXT exchange rate naturally improves.
-    function stakeSONO(uint256 amount) external whenNotPaused nonReentrant {
-        require(sonoToken != address(0), "sono not configured");
+    /// @notice Stake SONO to earn share of settlement fees.
+    ///   Same token — no external transfer, just internal accounting.
+    function stake(uint256 amount) external whenNotPaused nonReentrant {
         require(amount > 0, "zero amount");
+        require(balanceOf[msg.sender] >= amount, "insufficient balance");
 
         _updateReward(msg.sender);
 
-        bool ok = IERC20(sonoToken).transferFrom(msg.sender, address(this), amount);
-        require(ok, "sono transfer failed");
-
-        sonoStaked[msg.sender] += amount;
-        totalSonoStaked += amount;
-        emit SonoStaked(msg.sender, amount, sonoStaked[msg.sender]);
+        balanceOf[msg.sender] -= amount;
+        staked[msg.sender] += amount;
+        totalStaked += amount;
+        emit Transfer(msg.sender, address(this), amount);
+        emit Staked(msg.sender, amount, staked[msg.sender]);
+        _notifyGovernance(msg.sender);
     }
 
-    /// @notice Unstake SONO. Locked during active governance proposals you voted on.
-    function unstakeSONO(uint256 amount) external nonReentrant {
+    /// @notice Unstake SONO.
+    function unstake(uint256 amount) external nonReentrant {
         require(amount > 0, "zero amount");
-        require(sonoStaked[msg.sender] >= amount, "insufficient stake");
+        require(staked[msg.sender] >= amount, "insufficient stake");
         require(block.timestamp >= unstakeLockUntil[msg.sender], "locked by governance vote");
 
-        // If provider, ensure they keep minimum stake
         if (providers[msg.sender].registered) {
-            require(
-                sonoStaked[msg.sender] - amount >= minProviderStake,
-                "would drop below provider minimum"
-            );
+            require(staked[msg.sender] - amount >= minProviderStake, "would drop below provider minimum");
         }
 
         _updateReward(msg.sender);
 
-        sonoStaked[msg.sender] -= amount;
-        totalSonoStaked -= amount;
-
-        bool ok = IERC20(sonoToken).transfer(msg.sender, amount);
-        require(ok, "sono transfer failed");
-
-        emit SonoUnstaked(msg.sender, amount, sonoStaked[msg.sender]);
+        staked[msg.sender] -= amount;
+        totalStaked -= amount;
+        balanceOf[msg.sender] += amount;
+        emit Transfer(address(this), msg.sender, amount);
+        emit Unstaked(msg.sender, amount, staked[msg.sender]);
+        _notifyGovernance(msg.sender);
     }
 
-    /// @notice Claim accumulated TXT rewards from treasury
+    /// @notice Claim accumulated SONO rewards from staking
     function claimRewards() external nonReentrant {
         _updateReward(msg.sender);
         uint256 reward = rewards[msg.sender];
         require(reward > 0, "nothing to claim");
-
         rewards[msg.sender] = 0;
         treasuryPool -= reward;
         balanceOf[msg.sender] += reward;
-        emit Transfer(treasury, msg.sender, reward);
+        emit Transfer(address(this), msg.sender, reward);
         emit RewardClaimed(msg.sender, reward);
     }
 
-    /// @notice View pending rewards for a user
     function pendingRewards(address user) external view returns (uint256) {
-        uint256 rpt = rewardPerTokenStored;
         uint256 pending = rewards[user];
-        if (sonoStaked[user] > 0) {
-            pending += sonoStaked[user] * (rpt - userRewardPerToken[user]) / 1e18;
+        if (staked[user] > 0) {
+            pending += staked[user] * (rewardPerTokenStored - userRewardPerToken[user]) / 1e18;
         }
         return pending;
     }
 
     // ===================== Provider Registry =====================
 
-    /// @notice Register as an inference provider. Must stake minimum SONO.
     function registerProvider() external whenNotPaused {
         require(!providers[msg.sender].registered, "already registered");
-        require(sonoStaked[msg.sender] >= minProviderStake, "insufficient sono stake");
-
+        require(staked[msg.sender] >= minProviderStake, "insufficient stake");
         providers[msg.sender] = Provider({
             registered: true,
-            staked: sonoStaked[msg.sender],
+            stakedAtRegistration: staked[msg.sender],
             totalServed: 0
         });
-
-        emit ProviderRegistered(msg.sender, sonoStaked[msg.sender]);
+        emit ProviderRegistered(msg.sender, staked[msg.sender]);
     }
 
-    /// @notice Unregister as provider
     function unregisterProvider() external {
         require(providers[msg.sender].registered, "not registered");
-        uint256 staked = providers[msg.sender].staked;
+        uint256 s = providers[msg.sender].stakedAtRegistration;
         delete providers[msg.sender];
-        emit ProviderUnregistered(msg.sender, staked);
+        emit ProviderUnregistered(msg.sender, s);
     }
 
-    // ===================== Price Commitments =====================
-
-    /// @notice Commit a model pricing hash on-chain.
-    ///   hash = keccak256(abi.encodePacked(provider, modelId, pricePerKUnit, nonce))
-    ///   API validates inference price against on-chain commitment before executing.
     function commitPrice(bytes32 priceHash) external {
         require(providers[msg.sender].registered, "not a provider");
         priceCommitments[priceHash] = true;
         emit PriceCommitted(msg.sender, priceHash);
     }
 
-    /// @notice Revoke a price commitment
     function revokePrice(bytes32 priceHash) external {
         require(providers[msg.sender].registered, "not a provider");
         require(priceCommitments[priceHash], "not committed");
@@ -354,46 +343,102 @@ contract SonoToken {
         emit PriceRevoked(msg.sender, priceHash);
     }
 
-    /// @notice Verify a price commitment exists on-chain
     function verifyPrice(bytes32 priceHash) external view returns (bool) {
         return priceCommitments[priceHash];
     }
 
-    // ===================== Token management =====================
+    // ===================== Model Registry =====================
+
+    /// @notice Register a model name globally. Anyone can call (first-come naming).
+    function registerModel(bytes32 modelId, string calldata modelName) external {
+        require(bytes(modelNames[modelId]).length == 0, "model already named");
+        require(bytes(modelName).length > 0, "empty name");
+        modelNames[modelId] = modelName;
+        emit ModelRegistered(modelId, modelName);
+    }
+
+    /// @notice Owner can override a model name (fix squatting/abuse)
+    function setModelName(bytes32 modelId, string calldata modelName) external onlyOwner {
+        modelNames[modelId] = modelName;
+        emit ModelRegistered(modelId, modelName);
+    }
+
+    /// @notice Provider sets their price for a model. 0 = stop offering.
+    ///   pricePerKUnit is SONO per 1000 inference units (chars for TTS, tokens for LLM).
+    function setModelPrice(bytes32 modelId, uint256 pricePerKUnit) external {
+        require(providers[msg.sender].registered, "not a provider");
+        require(modelId != bytes32(0), "invalid model");
+        if (modelPrice[msg.sender][modelId] == 0 && pricePerKUnit > 0) {
+            // New model offering
+            providerModels[msg.sender].push(modelId);
+        }
+        modelPrice[msg.sender][modelId] = pricePerKUnit;
+        emit ModelPriceSet(msg.sender, modelId, pricePerKUnit);
+    }
+
+    /// @notice Get number of models offered by a provider
+    function providerModelCount(address provider) external view returns (uint256) {
+        return providerModels[provider].length;
+    }
+
+    /// @notice Get a provider's model at index
+    function providerModelAt(address provider, uint256 index) external view returns (bytes32 modelId, uint256 price) {
+        require(index < providerModels[provider].length, "out of bounds");
+        modelId = providerModels[provider][index];
+        price = modelPrice[provider][modelId];
+    }
+
+    // ===================== Admin =====================
+
+    // setDotPrice removed — no oracle needed. Price discovery via AssetConversion pool.
+    // setOracle removed — no oracle role needed.
 
     function setTokenRate(address token, uint256 rate, uint8 tokenDec) external onlyOwner {
-        if (!payTokens[token].accepted) {
-            payTokens[token].accepted = true;
-            payTokenList.push(token);
-        }
-        payTokens[token].txtPerToken = rate;
-        payTokens[token].tokenDecimals = tokenDec;
-        emit TokenRateUpdated(token, rate);
+        _setTokenRate(token, rate, tokenDec);
+    }
+
+    function setSonoPriceUsdt(uint256 _price, address _usdc, address _usdt) external onlyOwner {
+        require(_price > 0, "zero price");
+        sonoPriceUsdt = _price;
+        uint256 sonoPerStable = 1e16 / _price;
+        payTokens[_usdc].sonoPerToken = sonoPerStable;
+        payTokens[_usdt].sonoPerToken = sonoPerStable;
     }
 
     function removeToken(address token) external onlyOwner {
         payTokens[token].accepted = false;
-        payTokens[token].txtPerToken = 0;
+        payTokens[token].sonoPerToken = 0;
     }
 
-    function setDotPrice(uint256 _txtPerDot) external onlyOwner {
-        txtPerDot = _txtPerDot;
-        emit DotPriceUpdated(_txtPerDot);
-    }
+    function setDisputePeriod(uint256 period) external onlyOwner { disputePeriod = period; }
+    function transferOwnership(address newOwner) external onlyOwner { require(newOwner != address(0)); owner = newOwner; }
+    function setTreasury(address _treasury) external onlyOwner { require(_treasury != address(0)); treasury = _treasury; }
+    function setBurnBps(uint16 _bps) external onlyOwner { require(_bps <= 10000); burnBps = _bps; }
+    function setMinProviderStake(uint256 _min) external onlyOwner { minProviderStake = _min; }
+    function setGovernance(address _gov) external onlyOwner { governance = _gov; }
+    function setProtocolFeeBps(uint16 _bps) external onlyOwner { require(_bps <= 500); protocolFeeBps = _bps; }
+    function setPlatformCutBps(uint16 _bps) external onlyOwner { require(_bps <= 5000); platformCutBps = _bps; }
+    function setPaused(bool _paused) external onlyOwner { paused = _paused; }
 
-    function withdrawDot(uint256 amount) external onlyOwner nonReentrant {
-        require(address(this).balance >= amount, "insufficient balance");
-        (bool ok,) = owner.call{value: amount}("");
-        require(ok, "transfer failed");
-    }
+    // withdrawDot removed — contract no longer holds DOT reserves
 
+    /// @notice Withdraw ERC20 tokens — only protocol fees, not user deposits.
     function withdrawToken(address token, uint256 amount) external onlyOwner {
+        // Prevent draining user deposits — only allow withdrawing collected protocol fees
+        require(amount <= protocolFees[token], "exceeds protocol fees");
+        protocolFees[token] -= amount;
         bool ok = IERC20(token).transfer(owner, amount);
         require(ok, "transfer failed");
     }
 
-    function depositDot() external payable onlyOwner {}
-    function setPaused(bool _paused) external onlyOwner { paused = _paused; }
+    // withdrawProtocolFees merged into withdrawToken above
+
+    // depositDot removed — contract no longer needs DOT reserves
+
+    function lockForVote(address voter, uint64 unlockAt) external {
+        require(msg.sender == governance, "not governance");
+        if (unlockAt > unstakeLockUntil[voter]) unstakeLockUntil[voter] = unlockAt;
+    }
 
     // ===================== ERC20 =====================
 
@@ -424,9 +469,9 @@ contract SonoToken {
         bytes32 id = channelId(msg.sender, service);
         require(channels[id].deposit == 0, "channel exists");
         require(balanceOf[msg.sender] >= amount, "insufficient balance");
-
         balanceOf[msg.sender] -= amount;
         channels[id] = Channel(amount, 0, 0, 0);
+        emit Transfer(msg.sender, address(this), amount);
         emit ChannelOpened(msg.sender, service, amount);
     }
 
@@ -436,21 +481,20 @@ contract SonoToken {
         require(ch.deposit > 0, "no channel");
         require(ch.expiresAt == 0, "channel closing");
         require(balanceOf[msg.sender] >= amount, "insufficient balance");
-
         balanceOf[msg.sender] -= amount;
         ch.deposit += amount;
+        emit Transfer(msg.sender, address(this), amount);
         emit ChannelToppedUp(msg.sender, service, amount, ch.deposit);
     }
 
-    function cooperativeClose(
-        address user, uint256 spent, uint64 nonce, bytes calldata sig
-    ) external {
+    function cooperativeClose(address user, uint256 spent, uint64 nonce, bytes calldata sig) external {
         bytes32 id = channelId(user, msg.sender);
         Channel storage ch = channels[id];
         require(ch.deposit > 0, "no channel");
         require(spent <= ch.deposit, "overspend");
-
-        bytes32 stateHash = keccak256(abi.encodePacked(id, spent, nonce));
+        bytes32 stateHash = keccak256(abi.encode(
+            address(this), block.chainid, "cooperativeClose", id, spent, nonce
+        ));
         require(_recover(stateHash, sig) == user, "bad signature");
         _settle(id, user, msg.sender, spent);
     }
@@ -460,25 +504,24 @@ contract SonoToken {
         Channel storage ch = channels[id];
         require(ch.deposit > 0, "no channel");
         require(ch.expiresAt == 0, "already closing");
-
         ch.expiresAt = uint64(block.timestamp) + uint64(disputePeriod);
         emit ChannelClosing(id, msg.sender, ch.spent, ch.expiresAt);
     }
 
-    function initiateClose(
-        address counterparty, uint256 spent, uint64 nonce, bytes calldata sig
-    ) external {
-        (address user, address service) = msg.sender < counterparty
-            ? (msg.sender, counterparty) : (counterparty, msg.sender);
+    /// @notice Either party can initiate close with the counterparty's signature.
+    ///   The caller specifies the channel roles explicitly.
+    function initiateClose(address user, address service, uint256 spent, uint64 nonce, bytes calldata sig) external {
+        require(msg.sender == user || msg.sender == service, "not a party");
+        address counterparty = msg.sender == user ? service : user;
         bytes32 id = channelId(user, service);
         Channel storage ch = channels[id];
         require(ch.deposit > 0, "no channel");
         require(spent <= ch.deposit, "overspend");
         require(nonce > ch.nonce, "stale nonce");
-
-        bytes32 stateHash = keccak256(abi.encodePacked(id, spent, nonce));
+        bytes32 stateHash = keccak256(abi.encode(
+            address(this), block.chainid, "initiateClose", id, spent, nonce
+        ));
         require(_recover(stateHash, sig) == counterparty, "bad signature");
-
         ch.spent = spent;
         ch.nonce = nonce;
         ch.expiresAt = uint64(block.timestamp) + uint64(disputePeriod);
@@ -486,8 +529,7 @@ contract SonoToken {
     }
 
     function dispute(
-        address user, address service,
-        uint256 spent, uint64 nonce,
+        address user, address service, uint256 spent, uint64 nonce,
         bytes calldata userSig, bytes calldata serviceSig
     ) external {
         bytes32 id = channelId(user, service);
@@ -496,11 +538,11 @@ contract SonoToken {
         require(block.timestamp < ch.expiresAt, "dispute expired");
         require(nonce > ch.nonce, "not newer");
         require(spent <= ch.deposit, "overspend");
-
-        bytes32 stateHash = keccak256(abi.encodePacked(id, spent, nonce));
+        bytes32 stateHash = keccak256(abi.encode(
+            address(this), block.chainid, "dispute", id, spent, nonce
+        ));
         require(_recover(stateHash, userSig) == user, "bad user sig");
         require(_recover(stateHash, serviceSig) == service, "bad service sig");
-
         ch.spent = spent;
         ch.nonce = nonce;
         ch.expiresAt = uint64(block.timestamp) + uint64(disputePeriod);
@@ -528,119 +570,73 @@ contract SonoToken {
         return (ch.deposit, ch.spent, ch.nonce, ch.expiresAt);
     }
 
-    function quoteBuyDot(uint256 dotAmount) external view returns (uint256) {
-        if (txtPerDot == 0) return 0;
-        return dotAmount * txtPerDot / 1e18;
-    }
+    // quoteBuyDot removed — quote via AssetConversion.quote_price_exact_tokens_for_tokens()
 
     function quoteBuyToken(address token, uint256 amount) external view returns (uint256) {
         PayToken storage pt = payTokens[token];
-        if (!pt.accepted || pt.txtPerToken == 0) return 0;
-        return amount * pt.txtPerToken / (10 ** pt.tokenDecimals);
+        if (!pt.accepted || pt.sonoPerToken == 0) return 0;
+        uint256 net = protocolFeeBps > 0 ? amount - amount * protocolFeeBps / 10000 : amount;
+        return net * pt.sonoPerToken / (10 ** pt.tokenDecimals);
     }
 
-    function quoteSellDot(uint256 txtAmount) external view returns (uint256) {
-        if (txtPerDot == 0) return 0;
-        return txtAmount * 1e18 / txtPerDot;
-    }
+    // quoteSellDot removed — quote via AssetConversion
 
-    function availableReserve() external view returns (uint256) {
-        return balanceOf[owner];
-    }
+    function availableReserve() external view returns (uint256) { return balanceOf[owner]; }
+    function acceptedTokenCount() external view returns (uint256) { return payTokenList.length; }
+    function circulatingSupply() external view returns (uint256) { return totalSupply - totalBurned; }
 
-    function acceptedTokenCount() external view returns (uint256) {
-        return payTokenList.length;
-    }
-
-    /// @notice Effective TXT supply (totalSupply - totalBurned)
-    function circulatingSupply() external view returns (uint256) {
-        return totalSupply - totalBurned;
-    }
-
-    // ===================== Admin =====================
-
-    function setDisputePeriod(uint256 period) external onlyOwner {
-        disputePeriod = period;
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "zero address");
-        owner = newOwner;
-    }
-
-    function setTreasury(address _treasury) external onlyOwner {
-        require(_treasury != address(0), "zero address");
-        treasury = _treasury;
-    }
-
-    function setBurnBps(uint16 _burnBps) external onlyOwner {
-        require(_burnBps <= 10000, "exceeds 100%");
-        burnBps = _burnBps;
-    }
-
-    function setMinProviderStake(uint256 _minStake) external onlyOwner {
-        minProviderStake = _minStake;
-    }
-
-    function setGovernance(address _governance) external onlyOwner {
-        governance = _governance;
-    }
-
-    /// @notice Called by governance contract to lock a voter's stake until proposal ends.
-    ///   Extends lock if new proposal ends later than current lock.
-    function lockForVote(address voter, uint64 unlockAt) external {
-        require(msg.sender == governance, "not governance");
-        if (unlockAt > unstakeLockUntil[voter]) {
-            unstakeLockUntil[voter] = unlockAt;
-        }
-    }
+    /// @notice Total SONO locked in staking + treasury pool (for accounting verification)
+    function totalLockedInStaking() external view returns (uint256) { return totalStaked + treasuryPool; }
 
     // ===================== Internal =====================
 
-    /// @notice Settlement: burn portion of spent TXT, send remainder to treasury, refund user.
-    ///   Service (provider) does NOT receive TXT on-chain — providers are paid
-    ///   off-chain from platform revenue in stables.
+    /// @notice Settlement: pay provider, burn + distribute from platform cut.
     function _settle(bytes32 id, address user, address service, uint256 spent) internal {
         Channel storage ch = channels[id];
         uint256 refund = ch.deposit - spent;
 
         if (spent > 0) {
-            // Track provider's total served
-            if (providers[service].registered) {
+            uint256 providerPayout;
+            uint256 platformAmount;
+
+            if (providers[service].registered && platformCutBps > 0) {
+                platformAmount = spent * platformCutBps / 10000;
+                providerPayout = spent - platformAmount;
+                balanceOf[service] += providerPayout;
                 providers[service].totalServed += spent;
+                totalProviderEarnings += providerPayout;
+                emit Transfer(address(this), service, providerPayout);
+                emit ProviderPaid(service, providerPayout);
+            } else {
+                platformAmount = spent;
+                if (providers[service].registered) providers[service].totalServed += spent;
             }
 
-            uint256 burnAmount = spent * burnBps / 10000;
-            uint256 treasuryAmount = spent - burnAmount;
+            if (platformAmount > 0) {
+                uint256 burnAmount = platformAmount * burnBps / 10000;
+                uint256 treasuryAmount = platformAmount - burnAmount;
 
-            // Burn: reduce totalSupply, don't credit anyone
-            if (burnAmount > 0) {
-                _burn(burnAmount);
-            }
+                if (burnAmount > 0) _burn(burnAmount);
 
-            // Treasury: feed staker reward pool
-            if (treasuryAmount > 0) {
-                if (totalSonoStaked > 0) {
-                    // Distribute to stakers via reward-per-token accumulator
-                    rewardPerTokenStored += treasuryAmount * 1e18 / totalSonoStaked;
-                    treasuryPool += treasuryAmount;
-                    // TXT stays in contract, claimable by stakers
-                    emit TreasuryDistributed(treasuryAmount, rewardPerTokenStored);
-                } else if (treasury != address(0)) {
-                    // No stakers — send to treasury address
-                    balanceOf[treasury] += treasuryAmount;
-                    emit Transfer(address(0), treasury, treasuryAmount);
-                } else {
-                    // No stakers, no treasury — burn everything
-                    _burn(treasuryAmount);
+                if (treasuryAmount > 0) {
+                    if (totalStaked > 0) {
+                        rewardPerTokenStored += treasuryAmount * 1e18 / totalStaked;
+                        treasuryPool += treasuryAmount;
+                        emit TreasuryDistributed(treasuryAmount, rewardPerTokenStored);
+                    } else if (treasury != address(0)) {
+                        balanceOf[treasury] += treasuryAmount;
+                        emit Transfer(address(this), treasury, treasuryAmount);
+                    } else {
+                        _burn(treasuryAmount);
+                    }
                 }
             }
         }
 
         if (refund > 0) {
             balanceOf[user] += refund;
+            emit Transfer(address(this), user, refund);
         }
-
         emit ChannelSettled(id, user, service, spent, refund);
         delete channels[id];
     }
@@ -661,22 +657,40 @@ contract SonoToken {
 
     function _burn(uint256 amount) internal {
         totalBurned += amount;
-        // Note: tokens are already not in any balance (came from channel deposit).
-        // We just reduce totalSupply to reflect the permanent removal.
         totalSupply -= amount;
-        emit Transfer(address(0), address(0), amount);
-        emit TxtBurned(amount, 0, totalBurned);
+        emit Transfer(address(this), address(0), amount); // ERC20-standard burn
+        emit SonoBurned(amount, totalBurned);
     }
 
-    /// @notice Update reward accounting for a user before stake change
+    /// @dev Notify governance contract of stake changes (for vote weight eligibility)
+    function _notifyGovernance(address user) internal {
+        if (governance != address(0)) {
+            // Best-effort: don't revert if governance notification fails
+            (bool ok,) = governance.call(
+                abi.encodeWithSignature("notifyStakeChange(address)", user)
+            );
+            // Silence unused variable warning
+            ok;
+        }
+    }
+
     function _updateReward(address user) internal {
-        if (sonoStaked[user] > 0) {
-            rewards[user] += sonoStaked[user] * (rewardPerTokenStored - userRewardPerToken[user]) / 1e18;
+        if (staked[user] > 0 && rewardPerTokenStored > userRewardPerToken[user]) {
+            rewards[user] += staked[user] * (rewardPerTokenStored - userRewardPerToken[user]) / 1e18;
         }
         userRewardPerToken[user] = rewardPerTokenStored;
     }
 
-    /// @dev ecrecover with EIP-191 prefix + signature malleability protection
+    function _setTokenRate(address token, uint256 rate, uint8 tokenDec) internal {
+        if (!payTokens[token].accepted) {
+            payTokens[token].accepted = true;
+            payTokenList.push(token);
+        }
+        payTokens[token].sonoPerToken = rate;
+        payTokens[token].tokenDecimals = tokenDec;
+        emit TokenRateUpdated(token, rate);
+    }
+
     function _recover(bytes32 hash, bytes memory sig) internal pure returns (address) {
         require(sig.length == 65, "bad sig length");
         bytes32 r; bytes32 s; uint8 v;
@@ -694,5 +708,5 @@ contract SonoToken {
         return signer;
     }
 
-    receive() external payable {}
+    // receive() removed — contract does not accept native DOT
 }

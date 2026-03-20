@@ -1,5 +1,7 @@
-import { createSignal, onMount, For, Show } from 'solid-js'
-import { pools, loading, fetchPools, fetchDotPrice, dotPrice, type PoolInfo } from '../lib/assetConversion'
+import { createSignal, createEffect, onMount, For, Show } from 'solid-js'
+import { pools, loading, fetchPools, fetchDotPrice, dotPrice, quoteSwap, executeSwap, addLiquidity, type PoolInfo } from '../lib/assetConversion'
+import { selectedAccount } from '../lib/wallet'
+import { showToast } from './Toast'
 import { t } from '../lib/i18n'
 
 export default function PoolExplorer() {
@@ -9,8 +11,8 @@ export default function PoolExplorer() {
   const [filter, setFilter] = createSignal('')
 
   onMount(async () => {
-    await fetchDotPrice()
     await fetchPools()
+    await fetchDotPrice()
   })
 
   const filteredPools = () => {
@@ -31,15 +33,9 @@ export default function PoolExplorer() {
       <div class="w-full max-w-4xl mx-auto flex-1 flex flex-col gap-4 min-h-0">
 
         {/* Header */}
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center gap-3">
-            <span class="i-mdi-swap-horizontal w-6 h-6 text-accent" />
-            <h2 class="text-lg font-heading uppercase tracking-wider">Asset Hub Liquidity</h2>
-          </div>
-          <p class="text-xs text-fg-faint leading-relaxed">
-            Polkadot Asset Hub has a built-in Uniswap V2 AMM (AssetConversion pallet).
-            Provide liquidity, earn swap fees. No bridges, no external chains — native DOT, USDT, USDC.
-          </p>
+        <div class="flex items-center gap-3">
+          <span class="i-mdi-swap-horizontal w-6 h-6 text-accent" />
+          <h2 class="text-lg font-heading uppercase tracking-wider">Swap</h2>
         </div>
 
         {/* Stats bar */}
@@ -79,6 +75,125 @@ export default function PoolExplorer() {
             <span class={`i-mdi-refresh w-4 h-4 ${loading() ? 'animate-spin' : ''}`} />
           </button>
         </div>
+
+        {/* Swap Panel — shows above pool list when a pool is selected */}
+        <Show when={selectedPool()}>
+          {(pool) => {
+            const [swapDirection, setSwapDirection] = createSignal<'1to2' | '2to1'>('1to2')
+            const [inputAmount, setInputAmount] = createSignal('')
+            const [outputQuote, setOutputQuote] = createSignal<string | null>(null)
+            const [swapping, setSwapping] = createSignal(false)
+            const [swapError, setSwapError] = createSignal<string | null>(null)
+
+            createEffect(async () => {
+              const raw = inputAmount()
+              setOutputQuote(null)
+              const val = parseFloat(raw)
+              if (!raw || isNaN(val) || val <= 0) return
+
+              const p = pool()
+              const dir = swapDirection()
+              const inAsset = dir === '1to2' ? p.asset1 : p.asset2
+              const outAsset = dir === '1to2' ? p.asset2 : p.asset1
+              const inDecimals = dir === '1to2' ? p.asset1Decimals : p.asset2Decimals
+              const outDecimals = dir === '1to2' ? p.asset2Decimals : p.asset1Decimals
+
+              const amountIn = BigInt(Math.floor(val * 10 ** inDecimals))
+              const quote = await quoteSwap(inAsset, outAsset, amountIn)
+              if (quote !== null) {
+                setOutputQuote((Number(quote) / 10 ** outDecimals).toFixed(outDecimals <= 6 ? 4 : 2))
+              }
+            })
+
+            async function handleSwap() {
+              if (swapping()) return
+              const raw = inputAmount()
+              const val = parseFloat(raw)
+              if (!raw || isNaN(val) || val <= 0) return
+              setSwapping(true)
+              setSwapError(null)
+              try {
+                const p = pool()
+                const dir = swapDirection()
+                const inAsset = dir === '1to2' ? p.asset1 : p.asset2
+                const outAsset = dir === '1to2' ? p.asset2 : p.asset1
+                const inDecimals = dir === '1to2' ? p.asset1Decimals : p.asset2Decimals
+                const amountIn = BigInt(Math.floor(val * 10 ** inDecimals))
+                const txHash = await executeSwap([inAsset, outAsset], amountIn, 1n)
+                showToast(`Swap executed`, 'success')
+                setInputAmount('')
+                fetchPools()
+              } catch (e: any) {
+                setSwapError(e.message || 'Swap failed')
+              }
+              setSwapping(false)
+            }
+
+            const inSymbol = () => swapDirection() === '1to2' ? pool().asset1Symbol : pool().asset2Symbol
+            const outSymbol = () => swapDirection() === '1to2' ? pool().asset2Symbol : pool().asset1Symbol
+
+            return (
+              <div class="bg-surface border-2 border-accent p-4 shadow-[var(--shadow)]">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2">
+                    <span class="i-mdi-swap-horizontal w-5 h-5 text-accent" />
+                    <span class="text-sm font-heading uppercase tracking-wider">Swap</span>
+                    <span class="text-xs font-mono text-fg-faint">{pool().asset1Symbol}/{pool().asset2Symbol}</span>
+                  </div>
+                  <button class="text-fg-faint hover:text-fg text-xs" onClick={() => setSelectedPool(null)}>
+                    <span class="i-mdi-close w-4 h-4" />
+                  </button>
+                </div>
+                <div class="space-y-2">
+                  <div class="bg-page border border-edge-soft p-3 flex items-center gap-2">
+                    <input
+                      type="number"
+                      class="flex-1 bg-transparent text-lg font-mono text-fg outline-none"
+                      placeholder="0.0"
+                      value={inputAmount()}
+                      onInput={(e) => setInputAmount(e.currentTarget.value)}
+                      step="any"
+                    />
+                    <span class="text-sm font-mono font-bold text-fg">{inSymbol()}</span>
+                  </div>
+                  <div class="flex justify-center">
+                    <button
+                      class="p-1 hover:bg-accent-soft rounded transition-colors"
+                      onClick={() => setSwapDirection(d => d === '1to2' ? '2to1' : '1to2')}
+                    >
+                      <span class="i-mdi-swap-vertical w-5 h-5 text-accent" />
+                    </button>
+                  </div>
+                  <div class="bg-page border border-edge-soft p-3 flex items-center gap-2">
+                    <span class="flex-1 text-lg font-mono text-accent">{outputQuote() || '0.0'}</span>
+                    <span class="text-sm font-mono font-bold text-fg">{outSymbol()}</span>
+                  </div>
+                  <Show when={outputQuote() && inputAmount()}>
+                    <div class="text-[10px] text-fg-faint text-center font-mono">
+                      1 {inSymbol()} = {(parseFloat(outputQuote()!) / parseFloat(inputAmount())).toFixed(4)} {outSymbol()}
+                    </div>
+                  </Show>
+                  <Show when={selectedAccount()} fallback={
+                    <div class="text-xs text-fg-muted text-center py-2">Connect wallet to swap</div>
+                  }>
+                    <button
+                      class="w-full py-3 text-sm font-heading uppercase tracking-wider bg-accent text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                      disabled={swapping() || !inputAmount() || !outputQuote()}
+                      onClick={handleSwap}
+                    >
+                      <Show when={!swapping()} fallback={<span class="animate-pulse">Swapping...</span>}>
+                        Swap
+                      </Show>
+                    </button>
+                  </Show>
+                  <Show when={swapError()}>
+                    <div class="text-xs text-red-700 bg-red-50 border border-red-200 p-2">{swapError()}</div>
+                  </Show>
+                </div>
+              </div>
+            )
+          }}
+        </Show>
 
         {/* Pool list */}
         <div class="flex-1 overflow-y-auto min-h-0">
@@ -128,36 +243,14 @@ export default function PoolExplorer() {
           </Show>
         </div>
 
-        {/* Developer section */}
-        <div class="bg-surface border-2 border-edge p-4 shadow-[var(--shadow)]">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="i-mdi-code-braces w-4 h-4 text-accent" />
-            <span class="text-xs font-heading uppercase tracking-wider text-accent">For developers</span>
+        {/* Hint when no pool selected */}
+        <Show when={!selectedPool()}>
+          <div class="bg-surface border-2 border-edge p-3 shadow-[var(--shadow)] text-center">
+            <p class="text-xs text-fg-faint">
+              Select a pool to swap
+            </p>
           </div>
-          <p class="text-[11px] text-fg-faint leading-relaxed mb-2">
-            AssetConversion is a Uniswap V2 AMM built into the Polkadot Asset Hub runtime.
-            No smart contract deployment needed — it's a substrate pallet with native access to all Asset Hub tokens.
-          </p>
-          <div class="flex flex-wrap gap-2">
-            <a
-              href="https://wiki.polkadot.network/docs/build-protocol-info#asset-hub"
-              target="_blank"
-              class="px-2.5 py-1 text-[10px] text-fg-faint hover:text-accent bg-page border border-edge-soft hover:border-accent-muted font-mono transition-colors"
-            >
-              Polkadot Wiki
-            </a>
-            <a
-              href="https://assethub-polkadot.subscan.io/"
-              target="_blank"
-              class="px-2.5 py-1 text-[10px] text-fg-faint hover:text-accent bg-page border border-edge-soft hover:border-accent-muted font-mono transition-colors"
-            >
-              Subscan Explorer
-            </a>
-            <code class="px-2.5 py-1 text-[10px] text-fg-faint bg-page border border-edge-soft font-mono">
-              api.tx.AssetConversion.swap_exact_tokens_for_tokens()
-            </code>
-          </div>
-        </div>
+        </Show>
       </div>
     </div>
   )

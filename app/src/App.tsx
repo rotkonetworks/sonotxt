@@ -494,7 +494,7 @@ export default function App() {
   return (
     <div class="h-screen flex flex-col sm:flex-row">
       {/* Thin sidebar — desktop only */}
-      <div class="hidden sm:flex flex-none w-12 flex-col bg-surface border-r-2 border-edge items-center py-2 gap-0.5">
+      <div class="hidden sm:flex flex-none w-12 flex-col bg-surface border-r-2 border-edge items-center py-2 gap-0.5 overflow-hidden">
         <button class="group/nav relative p-2 text-fg-faint hover:text-accent" onClick={() => setSidebarOpen(!sidebarOpen())}>
           <span class={sidebarOpen() ? 'i-mdi-menu-open w-5 h-5' : 'i-mdi-account-group w-5 h-5'} />
           <Show when={store.pendingInvites.length > 0} fallback={

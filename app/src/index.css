@@ -312,9 +312,11 @@ aside ::-webkit-scrollbar-thumb {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* content padding to clear bottom nav + safe area */
-.pb-safe-nav {
-  padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+/* content padding to clear bottom nav + safe area (mobile only) */
+@media (max-width: 639px) {
+  .pb-safe-nav {
+    padding-bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* page transition for mode switches */

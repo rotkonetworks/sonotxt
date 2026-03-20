@@ -2,7 +2,7 @@
 // Uniswap V2 style AMM built into the Polkadot Asset Hub runtime
 
 import { createClient } from 'polkadot-api'
-import { getWsProvider } from 'polkadot-api/ws-provider/web'
+import { getWsProvider } from 'polkadot-api/ws'
 import { createSignal } from 'solid-js'
 
 const WS_RPC = import.meta.env.VITE_SUBSTRATE_RPC || 'wss://asset-hub-polkadot.dotters.network/'
@@ -85,6 +85,31 @@ function getDecimals(location: AssetLocation): number {
   return 10 // default for DOT-like assets
 }
 
+// Cache for on-chain asset metadata
+const assetMetadataCache: Record<number, { symbol: string; name: string; decimals: number }> = {}
+
+// Fetch asset metadata from chain for unknown assets
+async function fetchAssetMetadata(assetId: number): Promise<{ symbol: string; name: string; decimals: number } | null> {
+  if (KNOWN_ASSETS[assetId]) return KNOWN_ASSETS[assetId]
+  if (assetMetadataCache[assetId]) return assetMetadataCache[assetId]
+  try {
+    const client = getClient()
+    const unsafeApi = client.getUnsafeApi()
+    const meta = await unsafeApi.query.Assets.Metadata.getValue(assetId)
+    if (meta) {
+      const symbol = typeof meta.symbol === 'string' ? meta.symbol :
+        meta.symbol?.asText?.() || meta.symbol?.asBytes ? new TextDecoder().decode(meta.symbol.asBytes()) : `#${assetId}`
+      const name = typeof meta.name === 'string' ? meta.name :
+        meta.name?.asText?.() || meta.name?.asBytes ? new TextDecoder().decode(meta.name.asBytes()) : symbol
+      const decimals = Number(meta.decimals || 0)
+      const entry = { symbol, name, decimals }
+      assetMetadataCache[assetId] = entry
+      return entry
+    }
+  } catch {}
+  return null
+}
+
 let _client: ReturnType<typeof createClient> | null = null
 function getClient() {
   if (!_client) _client = createClient(getWsProvider(WS_RPC))
@@ -102,10 +127,22 @@ export async function fetchPools(): Promise<PoolInfo[]> {
 
     for (const pool of rawPools) {
       const [a1, a2] = pool.keyArgs[0]
-      const sym1 = getAssetSymbol(a1)
-      const sym2 = getAssetSymbol(a2)
-      const dec1 = getDecimals(a1)
-      const dec2 = getDecimals(a2)
+      let sym1 = getAssetSymbol(a1)
+      let sym2 = getAssetSymbol(a2)
+      let dec1 = getDecimals(a1)
+      let dec2 = getDecimals(a2)
+
+      // Fetch on-chain metadata for unknown assets
+      const id1 = getAssetId(a1)
+      const id2 = getAssetId(a2)
+      if (id1 !== null && (sym1.startsWith('#') || sym1 === '???')) {
+        const meta = await fetchAssetMetadata(id1)
+        if (meta) { sym1 = meta.symbol; dec1 = meta.decimals }
+      }
+      if (id2 !== null && (sym2.startsWith('#') || sym2 === '???')) {
+        const meta = await fetchAssetMetadata(id2)
+        if (meta) { sym2 = meta.symbol; dec2 = meta.decimals }
+      }
 
       try {
         const reserves = await unsafeApi.apis.AssetConversionApi.get_reserves(a1, a2)
@@ -143,7 +180,12 @@ export async function fetchPools(): Promise<PoolInfo[]> {
       } catch {}
     }
 
-    result.sort((a, b) => b.tvlUsd - a.tvlUsd)
+    // Sort by native (DOT/PAS) reserve — largest liquidity first, no USD dependency
+    result.sort((a, b) => {
+      const aDot = (a.asset1Symbol === 'DOT' || a.asset1Symbol === 'PAS') ? a.reserve1Human : 0
+      const bDot = (b.asset1Symbol === 'DOT' || b.asset1Symbol === 'PAS') ? b.reserve1Human : 0
+      return bDot - aDot
+    })
     setPools(result)
     return result
   } finally {
@@ -169,15 +211,136 @@ export async function quoteSwap(
   }
 }
 
-// Fetch DOT price from CoinGecko
+// Derive DOT price directly from on-chain pool reserves.
+// Reads from the pools we already fetch — no API, no middleman.
 export async function fetchDotPrice(): Promise<number> {
-  try {
-    const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=polkadot&vs_currencies=usd')
-    const data = await resp.json()
-    const price = data?.polkadot?.usd || 0
-    setDotPrice(price)
-    return price
-  } catch {
-    return 0
+  // If pools are already loaded, derive price from DOT/USDT or DOT/USDC pool
+  const loaded = pools()
+  if (loaded.length > 0) {
+    for (const pool of loaded) {
+      const s1 = pool.asset1Symbol
+      const s2 = pool.asset2Symbol
+      // DOT paired with a stablecoin
+      if ((s1 === 'DOT' || s1 === 'PAS') && (s2 === 'USDT' || s2 === 'USDC')) {
+        const price = pool.price // stablecoin per DOT
+        if (price > 0) { setDotPrice(price); return price }
+      }
+      if ((s2 === 'DOT' || s2 === 'PAS') && (s1 === 'USDT' || s1 === 'USDC')) {
+        const price = 1 / pool.price
+        if (price > 0) { setDotPrice(price); return price }
+      }
+    }
   }
+  // Pools not loaded yet or no stablecoin pool — return current
+  return dotPrice()
+}
+
+// Execute a swap via AssetConversion pallet (requires connected wallet)
+export async function executeSwap(
+  path: AssetLocation[],
+  amountIn: bigint,
+  amountOutMin: bigint,
+): Promise<string> {
+  const { connectInjectedExtension } = await import('polkadot-api/pjs-signer')
+  const { connectedWallet, selectedAccount } = await import('./wallet')
+  const { paseo_ah } = await import('@polkadot-api/descriptors')
+
+  const account = selectedAccount()
+  const wallet = connectedWallet()
+  if (!account || !wallet) throw new Error('No wallet connected')
+
+  const client = getClient()
+  const api = client.getTypedApi(paseo_ah)
+
+  const ext = await connectInjectedExtension(wallet.extensionName)
+  const papiAccounts = ext.getAccounts()
+  const signer = papiAccounts.find(a => a.address === account.address)
+  if (!signer) throw new Error('Account not found in extension')
+
+  const tx = api.tx.AssetConversion.swap_exact_tokens_for_tokens({
+    path,
+    amount_in: amountIn,
+    amount_out_min: amountOutMin,
+    send_to: { type: 'Id' as const, value: account.address },
+    keep_alive: true,
+  })
+
+  const result = await tx.signAndSubmit(signer.polkadotSigner)
+  return result.txHash
+}
+
+// Add liquidity to a pool
+export async function addLiquidity(
+  asset1: AssetLocation,
+  asset2: AssetLocation,
+  amount1Desired: bigint,
+  amount2Desired: bigint,
+  amount1Min: bigint,
+  amount2Min: bigint,
+): Promise<string> {
+  const { connectInjectedExtension } = await import('polkadot-api/pjs-signer')
+  const { connectedWallet, selectedAccount } = await import('./wallet')
+  const { paseo_ah } = await import('@polkadot-api/descriptors')
+
+  const account = selectedAccount()
+  const wallet = connectedWallet()
+  if (!account || !wallet) throw new Error('No wallet connected')
+
+  const client = getClient()
+  const api = client.getTypedApi(paseo_ah)
+
+  const ext = await connectInjectedExtension(wallet.extensionName)
+  const papiAccounts = ext.getAccounts()
+  const signer = papiAccounts.find(a => a.address === account.address)
+  if (!signer) throw new Error('Account not found in extension')
+
+  const tx = api.tx.AssetConversion.add_liquidity({
+    asset1,
+    asset2,
+    amount1_desired: amount1Desired,
+    amount2_desired: amount2Desired,
+    amount1_min: amount1Min,
+    amount2_min: amount2Min,
+    mint_to: { type: 'Id' as const, value: account.address },
+  })
+
+  const result = await tx.signAndSubmit(signer.polkadotSigner)
+  return result.txHash
+}
+
+// Remove liquidity from a pool
+export async function removeLiquidity(
+  asset1: AssetLocation,
+  asset2: AssetLocation,
+  lpTokenBurn: bigint,
+  amount1Min: bigint,
+  amount2Min: bigint,
+): Promise<string> {
+  const { connectInjectedExtension } = await import('polkadot-api/pjs-signer')
+  const { connectedWallet, selectedAccount } = await import('./wallet')
+  const { paseo_ah } = await import('@polkadot-api/descriptors')
+
+  const account = selectedAccount()
+  const wallet = connectedWallet()
+  if (!account || !wallet) throw new Error('No wallet connected')
+
+  const client = getClient()
+  const api = client.getTypedApi(paseo_ah)
+
+  const ext = await connectInjectedExtension(wallet.extensionName)
+  const papiAccounts = ext.getAccounts()
+  const signer = papiAccounts.find(a => a.address === account.address)
+  if (!signer) throw new Error('Account not found in extension')
+
+  const tx = api.tx.AssetConversion.remove_liquidity({
+    asset1,
+    asset2,
+    lp_token_burn: lpTokenBurn,
+    amount1_min_receive: amount1Min,
+    amount2_min_receive: amount2Min,
+    withdraw_to: { type: 'Id' as const, value: account.address },
+  })
+
+  const result = await tx.signAndSubmit(signer.polkadotSigner)
+  return result.txHash
 }

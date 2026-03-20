@@ -17,6 +17,7 @@ import {
   createWalletClient,
   custom,
   http,
+  webSocket,
   formatUnits,
   parseUnits,
   type Address,
@@ -24,12 +25,12 @@ import {
 } from 'viem'
 import { defineChain } from 'viem/utils'
 
-const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || '420420417')
-const CHAIN_NAME = import.meta.env.VITE_CHAIN_NAME || 'Paseo Asset Hub'
-const ETH_RPC = import.meta.env.VITE_ETH_RPC || 'https://eth-asset-hub-paseo.dotters.network'
+const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID || '420420419')
+const CHAIN_NAME = import.meta.env.VITE_CHAIN_NAME || 'Polkadot Asset Hub'
+const ETH_RPC = import.meta.env.VITE_ETH_RPC || 'https://eth-asset-hub-polkadot.dotters.network'
 const IS_TESTNET = CHAIN_ID === 420420417
 
-export const SUBSTRATE_RPC = import.meta.env.VITE_SUBSTRATE_RPC || 'wss://asset-hub-paseo.dotters.network/'
+export const SUBSTRATE_RPC = import.meta.env.VITE_SUBSTRATE_RPC || 'wss://asset-hub-polkadot.dotters.network/'
 
 const nativeCurrency = IS_TESTNET
   ? { name: 'PAS', symbol: 'PAS', decimals: 18 }
@@ -46,16 +47,15 @@ export const assetHubChain = defineChain({
 })
 
 // Contract address — configurable per network
-const CONTRACT_ADDRESS: Address = (import.meta.env.VITE_CONTRACT_ADDRESS || '0x1b3ece804e4414e3bce3ca9a006656b67d07fea1') as Address
+const CONTRACT_ADDRESS: Address = (import.meta.env.VITE_CONTRACT_ADDRESS || '0xe080346edf54998d9b6843a68be8fdcc342adec5') as Address
 
-const TXT_DECIMALS = 10
+const SONO_DECIMALS = 10
 
 // Pallet-assets ERC20 precompile addresses
 // Format: [asset_id_be32][12 zero bytes][0x0120][2 zero bytes]
 export const TOKENS = {
   USDC:  '0x0000053900000000000000000000000001200000' as Address, // asset 1337, 6 dec
   USDT:  '0x000007c000000000000000000000000001200000' as Address, // asset 1984, 6 dec
-  SONO:  '0x02faf23d00000000000000000000000001200000' as Address, // asset 50000445, 10 dec
 } as const
 
 // Minimal ERC20 ABI for precompile tokens
@@ -67,7 +67,7 @@ const ERC20_ABI = [
 ] as const
 
 // TXT contract ABI
-const TXT_ABI = [
+const SONO_ABI = [
   // ERC20
   { type: 'function', name: 'name', inputs: [], outputs: [{ type: 'string' }], stateMutability: 'view' },
   { type: 'function', name: 'symbol', inputs: [], outputs: [{ type: 'string' }], stateMutability: 'view' },
@@ -102,6 +102,32 @@ const TXT_ABI = [
   { type: 'function', name: 'availableReserve', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
   { type: 'function', name: 'disputePeriod', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
 
+  // SONO Staking
+  { type: 'function', name: 'stake', inputs: [{ name: 'amount', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'unstake', inputs: [{ name: 'amount', type: 'uint256' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'claimRewards', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'pendingRewards', inputs: [{ name: 'user', type: 'address' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'staked', inputs: [{ name: 'user', type: 'address' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'totalStaked', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'totalBurned', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'circulatingSupply', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'treasuryPool', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'burnBps', inputs: [], outputs: [{ type: 'uint16' }], stateMutability: 'view' },
+  { type: 'function', name: 'minProviderStake', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'protocolFeeBps', inputs: [], outputs: [{ type: 'uint16' }], stateMutability: 'view' },
+  { type: 'function', name: 'protocolFees', inputs: [{ name: 'token', type: 'address' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'sonoPriceUsdt', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'platformCutBps', inputs: [], outputs: [{ type: 'uint16' }], stateMutability: 'view' },
+  { type: 'function', name: 'totalProviderEarnings', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
+
+  // Provider Registry
+  { type: 'function', name: 'registerProvider', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'unregisterProvider', inputs: [], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'providers', inputs: [{ name: 'provider', type: 'address' }], outputs: [{ name: 'registered', type: 'bool' }, { name: 'staked', type: 'uint256' }, { name: 'totalServed', type: 'uint256' }], stateMutability: 'view' },
+  { type: 'function', name: 'commitPrice', inputs: [{ name: 'priceHash', type: 'bytes32' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'revokePrice', inputs: [{ name: 'priceHash', type: 'bytes32' }], outputs: [], stateMutability: 'nonpayable' },
+  { type: 'function', name: 'verifyPrice', inputs: [{ name: 'priceHash', type: 'bytes32' }], outputs: [{ type: 'bool' }], stateMutability: 'view' },
+
   // Events
   { type: 'event', name: 'Transfer', inputs: [{ name: 'from', type: 'address', indexed: true }, { name: 'to', type: 'address', indexed: true }, { name: 'value', type: 'uint256', indexed: false }] },
   { type: 'event', name: 'ChannelOpened', inputs: [{ name: 'user', type: 'address', indexed: true }, { name: 'service', type: 'address', indexed: true }, { name: 'deposit', type: 'uint256', indexed: false }] },
@@ -113,6 +139,13 @@ const TXT_ABI = [
   { type: 'event', name: 'SoldForDot', inputs: [{ name: 'seller', type: 'address', indexed: true }, { name: 'txtAmount', type: 'uint256', indexed: false }, { name: 'dotAmount', type: 'uint256', indexed: false }] },
   { type: 'event', name: 'DotPriceUpdated', inputs: [{ name: 'txtPerDot', type: 'uint256', indexed: false }] },
   { type: 'event', name: 'TokenRateUpdated', inputs: [{ name: 'token', type: 'address', indexed: true }, { name: 'txtPerToken', type: 'uint256', indexed: false }] },
+  { type: 'event', name: 'SonoStaked', inputs: [{ name: 'user', type: 'address', indexed: true }, { name: 'amount', type: 'uint256', indexed: false }, { name: 'total', type: 'uint256', indexed: false }] },
+  { type: 'event', name: 'SonoUnstaked', inputs: [{ name: 'user', type: 'address', indexed: true }, { name: 'amount', type: 'uint256', indexed: false }, { name: 'total', type: 'uint256', indexed: false }] },
+  { type: 'event', name: 'ProviderRegistered', inputs: [{ name: 'provider', type: 'address', indexed: true }, { name: 'staked', type: 'uint256', indexed: false }] },
+  { type: 'event', name: 'ProviderUnregistered', inputs: [{ name: 'provider', type: 'address', indexed: true }, { name: 'unstaked', type: 'uint256', indexed: false }] },
+  { type: 'event', name: 'RewardClaimed', inputs: [{ name: 'user', type: 'address', indexed: true }, { name: 'amount', type: 'uint256', indexed: false }] },
+  { type: 'event', name: 'TxtBurned', inputs: [{ name: 'burned', type: 'uint256', indexed: false }, { name: 'toTreasury', type: 'uint256', indexed: false }, { name: 'newTotalBurned', type: 'uint256', indexed: false }] },
+  { type: 'event', name: 'ProviderPaid', inputs: [{ name: 'provider', type: 'address', indexed: true }, { name: 'amount', type: 'uint256', indexed: false }] },
 ] as const
 
 // --- Clients ---
@@ -139,20 +172,20 @@ export function getWalletClient(account: Address) {
 export async function getBalance(address: Address): Promise<string> {
   const client = getPublicClient()
   const raw = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'balanceOf', args: [address],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'balanceOf', args: [address],
   })
-  return formatUnits(raw, TXT_DECIMALS)
+  return formatUnits(raw, SONO_DECIMALS)
 }
 
 export async function getChannel(user: Address, service: Address) {
   const client = getPublicClient()
   const [deposit, spent, nonce, expiresAt] = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'getChannel', args: [user, service],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'getChannel', args: [user, service],
   })
   return {
-    deposit: formatUnits(deposit, TXT_DECIMALS),
-    spent: formatUnits(spent, TXT_DECIMALS),
-    remaining: formatUnits(spent > deposit ? 0n : deposit - spent, TXT_DECIMALS),
+    deposit: formatUnits(deposit, SONO_DECIMALS),
+    spent: formatUnits(spent, SONO_DECIMALS),
+    remaining: formatUnits(spent > deposit ? 0n : deposit - spent, SONO_DECIMALS),
     nonce,
     expiresAt,
     isOpen: deposit > 0n,
@@ -163,17 +196,17 @@ export async function getChannel(user: Address, service: Address) {
 export async function getTotalSupply(): Promise<string> {
   const client = getPublicClient()
   const raw = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'totalSupply',
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'totalSupply',
   })
-  return formatUnits(raw, TXT_DECIMALS)
+  return formatUnits(raw, SONO_DECIMALS)
 }
 
 export async function getTxtPerDot(): Promise<string> {
   const client = getPublicClient()
   const raw = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'txtPerDot',
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'txtPerDot',
   })
-  return formatUnits(raw, TXT_DECIMALS)
+  return formatUnits(raw, SONO_DECIMALS)
 }
 
 // --- Token balance reads (USDC, USDT, SONO via precompile) ---
@@ -190,7 +223,7 @@ export async function getTokenBalance(token: Address, account: Address): Promise
 export async function buyWithDot(account: Address, dotAmount: bigint): Promise<Hash> {
   const wallet = getWalletClient(account)
   return wallet.writeContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'buyWithDot', value: dotAmount,
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'buyWithDot', value: dotAmount,
   })
 }
 
@@ -201,15 +234,15 @@ export async function buyWithToken(account: Address, token: Address, amount: big
     address: token, abi: ERC20_ABI, functionName: 'approve', args: [CONTRACT_ADDRESS, amount],
   })
   return wallet.writeContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'buyWithToken', args: [token, amount],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'buyWithToken', args: [token, amount],
   })
 }
 
 export async function sellForDot(account: Address, txtAmount: string): Promise<Hash> {
   const wallet = getWalletClient(account)
   return wallet.writeContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'sellForDot',
-    args: [parseUnits(txtAmount, TXT_DECIMALS)],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'sellForDot',
+    args: [parseUnits(txtAmount, SONO_DECIMALS)],
   })
 }
 
@@ -218,24 +251,24 @@ export async function sellForDot(account: Address, txtAmount: string): Promise<H
 export async function quoteBuyDot(dotAmount: bigint): Promise<string> {
   const client = getPublicClient()
   const raw = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'quoteBuyDot', args: [dotAmount],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'quoteBuyDot', args: [dotAmount],
   })
-  return formatUnits(raw, TXT_DECIMALS)
+  return formatUnits(raw, SONO_DECIMALS)
 }
 
 export async function quoteBuyToken(token: Address, amount: bigint): Promise<string> {
   const client = getPublicClient()
   const raw = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'quoteBuyToken', args: [token, amount],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'quoteBuyToken', args: [token, amount],
   })
-  return formatUnits(raw, TXT_DECIMALS)
+  return formatUnits(raw, SONO_DECIMALS)
 }
 
 export async function quoteSellDot(txtAmount: string): Promise<string> {
   const client = getPublicClient()
   const raw = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'quoteSellDot',
-    args: [parseUnits(txtAmount, TXT_DECIMALS)],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'quoteSellDot',
+    args: [parseUnits(txtAmount, SONO_DECIMALS)],
   })
   return formatUnits(raw, 18)
 }
@@ -245,38 +278,38 @@ export async function quoteSellDot(txtAmount: string): Promise<string> {
 export async function openChannel(account: Address, service: Address, amount: string): Promise<Hash> {
   const wallet = getWalletClient(account)
   return wallet.writeContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'openChannel',
-    args: [service, parseUnits(amount, TXT_DECIMALS)],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'openChannel',
+    args: [service, parseUnits(amount, SONO_DECIMALS)],
   })
 }
 
 export async function topUpChannel(account: Address, service: Address, amount: string): Promise<Hash> {
   const wallet = getWalletClient(account)
   return wallet.writeContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'topUp',
-    args: [service, parseUnits(amount, TXT_DECIMALS)],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'topUp',
+    args: [service, parseUnits(amount, SONO_DECIMALS)],
   })
 }
 
 export async function userCloseChannel(account: Address, service: Address): Promise<Hash> {
   const wallet = getWalletClient(account)
   return wallet.writeContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'userClose', args: [service],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'userClose', args: [service],
   })
 }
 
 export async function finalizeChannel(account: Address, user: Address, service: Address): Promise<Hash> {
   const wallet = getWalletClient(account)
   return wallet.writeContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'finalize', args: [user, service],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'finalize', args: [user, service],
   })
 }
 
 export async function transfer(account: Address, to: Address, amount: string): Promise<Hash> {
   const wallet = getWalletClient(account)
   return wallet.writeContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'transfer',
-    args: [to, parseUnits(amount, TXT_DECIMALS)],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'transfer',
+    args: [to, parseUnits(amount, SONO_DECIMALS)],
   })
 }
 
@@ -287,14 +320,16 @@ export async function signChannelState(
   channelId: `0x${string}`,
   spent: bigint,
   nonce: bigint,
+  functionName: 'cooperativeClose' | 'initiateClose' | 'dispute' = 'cooperativeClose',
 ): Promise<`0x${string}`> {
   const wallet = getWalletClient(account)
-  const { keccak256, encodePacked } = await import('viem')
-  const stateHash = keccak256(encodePacked(
-    ['bytes32', 'uint256', 'uint64'],
-    [channelId, spent, nonce],
+  const { keccak256, encodeAbiParameters, parseAbiParameters, toHex } = await import('viem')
+  // Domain-separated hash: includes contract address, chain ID, and function name
+  const stateHash = keccak256(encodeAbiParameters(
+    parseAbiParameters('address, uint256, string, bytes32, uint256, uint64'),
+    [CONTRACT_ADDRESS, BigInt(CHAIN_ID), functionName, channelId, spent, nonce],
   ))
   return wallet.signMessage({ account, message: { raw: stateHash as `0x${string}` } })
 }
 
-export { TXT_ABI, ERC20_ABI, TXT_DECIMALS, CONTRACT_ADDRESS }
+export { SONO_ABI, ERC20_ABI, SONO_DECIMALS, CONTRACT_ADDRESS }

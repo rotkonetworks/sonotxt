@@ -1,5 +1,8 @@
 import { createSignal, createEffect, Show, For, onCleanup } from 'solid-js'
 import { useStore } from '../lib/store'
+import { scrollFade } from '../lib/scrollFade'
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+scrollFade;
 import * as api from '../lib/api'
 import { parseUnits } from 'viem'
 import * as evm from '../lib/evm'
@@ -24,7 +27,7 @@ interface Props {
   onClose: () => void
 }
 
-type Tab = 'overview' | 'deposits' | 'api-keys' | 'history' | 'security' | 'private'
+type Tab = 'overview' | 'deposits' | 'staking' | 'api-keys' | 'history' | 'security' | 'private'
 
 export default function ProfilePage(props: Props) {
   const { state: store, token, actions } = useStore()
@@ -45,8 +48,8 @@ export default function ProfilePage(props: Props) {
   const [channelLoading, setChannelLoading] = createSignal(false)
   const [channelError, setChannelError] = createSignal<string | null>(null)
 
-  // Buy TXT
-  type PayMethod = 'DOT' | 'USDC' | 'USDT' | 'SONO'
+  // Buy SONO
+  type PayMethod = 'DOT' | 'USDC' | 'USDT'
   const [payMethod, setPayMethod] = createSignal<PayMethod>('DOT')
   const [buyAmount, setBuyAmount] = createSignal('')
   const [buyQuote, setBuyQuote] = createSignal<string | null>(null)
@@ -86,11 +89,10 @@ export default function ProfilePage(props: Props) {
     setAvatarSaving(false)
   }
 
-  const tokenDecimals: Record<PayMethod, number> = { DOT: 18, USDC: 6, USDT: 6, SONO: 10 }
+  const tokenDecimals: Record<PayMethod, number> = { DOT: 18, USDC: 6, USDT: 6 }
   const tokenAddresses: Record<string, import('viem').Address> = {
     USDC: evm.TOKENS.USDC,
     USDT: evm.TOKENS.USDT,
-    SONO: evm.TOKENS.SONO,
   }
 
   // Fetch quote when amount or method changes
@@ -112,7 +114,16 @@ export default function ProfilePage(props: Props) {
         const parsed = parseUnits(raw, dec)
         let quote: string
         if (method === 'DOT') {
-          quote = await evm.quoteBuyDot(parsed)
+          // DOT→USDT via AssetConversion, then USDT→SONO via contract
+          const { quoteSwap } = await import('../lib/assetConversion')
+          const native = { parents: 1, interior: { type: 'Here' as const } }
+          const usdt = { parents: 0, interior: { type: 'X2' as const, value: [{ type: 'PalletInstance' as const, value: 50 }, { type: 'GeneralIndex' as const, value: 1984 }] } }
+          const usdtOut = await quoteSwap(native, usdt, parsed)
+          if (usdtOut) {
+            quote = await evm.quoteBuyToken(evm.TOKENS.USDT, usdtOut)
+          } else {
+            quote = '0'
+          }
         } else {
           quote = await evm.quoteBuyToken(tokenAddresses[method], parsed)
         }
@@ -155,7 +166,19 @@ export default function ProfilePage(props: Props) {
       const dec = tokenDecimals[method]
       const parsed = parseUnits(raw, dec)
       if (method === 'DOT') {
-        await evm.buyWithDot(parsed)
+        // DOT path: swap DOT→USDT on AssetConversion, then buy SONO with USDT
+        const { executeSwap } = await import('../lib/assetConversion')
+        const native = { parents: 1, interior: { type: 'Here' as const } }
+        const usdt = { parents: 0, interior: { type: 'X2' as const, value: [{ type: 'PalletInstance' as const, value: 50 }, { type: 'GeneralIndex' as const, value: 1984 }] } }
+        showToast('Swapping DOT → USDT...', 'success')
+        await executeSwap([native, usdt], parsed, 1n)
+        // Now buy SONO with the USDT we got
+        // Refresh USDT balance and buy with it
+        const usdtBal = await evm.getTokenBalance(evm.TOKENS.USDT)
+        if (usdtBal > 0n) {
+          showToast('Buying SONO with USDT...', 'success')
+          await evm.buyWithToken(evm.TOKENS.USDT, usdtBal)
+        }
       } else {
         await evm.buyWithToken(tokenAddresses[method], parsed)
       }
@@ -205,22 +228,23 @@ export default function ProfilePage(props: Props) {
   // const [teeConnecting, setTeeConnecting] = createSignal(false)
   // const [teeError, setTeeError] = createSignal<string | null>(null)
 
-  createEffect(async () => {
-    const tok = token()
-    if (!tok) return
-    setLoading(true)
-    try {
-      const [addrRes, depsRes] = await Promise.all([
-        api.getDepositAddresses(tok),
-        api.listDeposits(tok),
-      ])
-      setAddresses(addrRes)
-      setDeposits(depsRes)
-    } catch (e) {
-      console.error('Failed to fetch payment info:', e)
-    }
-    setLoading(false)
-  })
+  // Disabled: custodial deposit fetching (on-chain only for hackathon)
+  // createEffect(async () => {
+  //   const tok = token()
+  //   if (!tok) return
+  //   setLoading(true)
+  //   try {
+  //     const [addrRes, depsRes] = await Promise.all([
+  //       api.getDepositAddresses(tok),
+  //       api.listDeposits(tok),
+  //     ])
+  //     setAddresses(addrRes)
+  //     setDeposits(depsRes)
+  //   } catch (e) {
+  //     console.error('Failed to fetch payment info:', e)
+  //   }
+  //   setLoading(false)
+  // })
 
   async function startStripeCheckout() {
     const tok = token()
@@ -276,9 +300,10 @@ export default function ProfilePage(props: Props) {
         </div>
 
         {/* Tabs */}
-        <div class="flex border-b border-edge-soft overflow-x-auto scroll-fade">
+        <div use:scrollFade class="flex border-b border-edge-soft overflow-x-auto">
           <button class={tabClass('overview')} onClick={() => setTab('overview')}>Overview</button>
           <button class={tabClass('deposits')} onClick={() => setTab('deposits')}>Deposits</button>
+          <button class={tabClass('staking')} onClick={() => setTab('staking')}>Staking</button>
           <button class={tabClass('api-keys')} onClick={() => setTab('api-keys')}>API Keys</button>
           <button class={tabClass('history')} onClick={() => setTab('history')}>History</button>
           <button class={tabClass('security')} onClick={() => setTab('security')}>Security</button>
@@ -299,10 +324,10 @@ export default function ProfilePage(props: Props) {
               <div class="panel-inset p-4">
                 <div class="text-[10px] text-fg-muted uppercase mb-1 font-heading">Account Balance</div>
                 <div class="text-2xl text-accent font-mono">${store.user?.balance.toFixed(2)}</div>
-                <Show when={parseFloat(evm.txtBalance()) > 0 || evm.channelInfo()}>
+                <Show when={parseFloat(evm.sonoBalance()) > 0 || evm.channelInfo()}>
                   <div class="flex items-center gap-2 mt-2 pt-2 border-t border-edge-soft">
                     <span class="i-mdi-currency-eth w-3 h-3 text-fg-muted" />
-                    <span class="text-xs text-fg font-mono">{evm.txtBalance()} TXT</span>
+                    <span class="text-xs text-fg font-mono">{evm.sonoBalance()} SONO</span>
                     <Show when={evm.channelInfo()}>
                       <span class="text-[10px] text-accent">({evm.channelInfo()!.remaining} in channel)</span>
                     </Show>
@@ -320,6 +345,160 @@ export default function ProfilePage(props: Props) {
                   </Show>
                 </div>
               </div>
+
+              {/* Wallet Upgrade Card — shown when user has balance but no wallet */}
+              {(() => {
+                const [linkStep, setLinkStep] = createSignal<'idle' | 'connecting' | 'signing' | 'migrating' | 'done'>('idle')
+                const [linkError, setLinkError] = createSignal<string | null>(null)
+                const [migrateResult, setMigrateResult] = createSignal<api.MigrateResponse | null>(null)
+
+                async function handleLinkWallet() {
+                  const tok = token()
+                  if (!tok) return
+                  setLinkStep('connecting')
+                  setLinkError(null)
+                  try {
+                    // Import wallet functions
+                    const { getWallets } = await import('@talismn/connect-wallets')
+                    const { connectWallet, signChallenge, selectedAccount: getSelected } = await import('../lib/wallet')
+
+                    // Find available wallets
+                    const available = getWallets()
+                    const installed = available.filter(w => w.installed)
+                    if (installed.length === 0) {
+                      setLinkError('No wallet extension found. Install Talisman or Polkadot.js.')
+                      setLinkStep('idle')
+                      return
+                    }
+
+                    // Connect to first available wallet
+                    const accounts = await connectWallet(installed[0])
+                    if (accounts.length === 0) {
+                      setLinkError('No accounts found in wallet')
+                      setLinkStep('idle')
+                      return
+                    }
+
+                    const account = getSelected() || accounts[0]
+                    const address = account.address
+
+                    // Get challenge
+                    setLinkStep('signing')
+                    const { challenge } = await api.walletChallenge(address)
+                    const signature = await signChallenge(challenge, address)
+
+                    // Link wallet
+                    await api.walletLink(tok, address, challenge, signature)
+
+                    // Update store with wallet address
+                    if (store.user) {
+                      actions.setUser({ ...store.user, wallet_address: address })
+                    }
+                    showToast('Wallet linked', 'success')
+                    setLinkStep('idle')
+                  } catch (e: any) {
+                    setLinkError(e.message || 'Failed to link wallet')
+                    setLinkStep('idle')
+                  }
+                }
+
+                async function handleMigrate() {
+                  const tok = token()
+                  if (!tok) return
+                  setLinkStep('migrating')
+                  setLinkError(null)
+                  try {
+                    const result = await api.walletMigrate(tok)
+                    setMigrateResult(result)
+                    // Update store balance to 0
+                    if (store.user) {
+                      actions.setUser({ ...store.user, balance: 0 })
+                    }
+                    // Refresh on-chain balance
+                    evm.refresh().catch(() => {})
+                    setLinkStep('done')
+                    showToast(`${result.txt_amount.toFixed(0)} SONO sent to wallet`, 'success')
+                  } catch (e: any) {
+                    setLinkError(e.message || 'Migration failed')
+                    setLinkStep('idle')
+                  }
+                }
+
+                return (
+                  <Show when={(store.user?.balance || 0) > 0 || (!store.user?.wallet_address && linkStep() === 'idle')}>
+                    <div class="panel-inset p-4 border-accent border-2">
+                      <div class="flex items-center gap-2 mb-2">
+                        <span class="i-mdi-rocket-launch text-accent w-5 h-5" />
+                        <span class="text-xs text-accent-strong font-heading font-semibold">Upgrade to On-Chain</span>
+                      </div>
+
+                      <Show when={!store.user?.wallet_address}>
+                        <p class="text-[10px] text-fg-muted mb-3 leading-relaxed">
+                          Connect a Polkadot wallet to convert your ${store.user?.balance.toFixed(2)} balance to SONO tokens.
+                          Own your tokens, save 10% on future purchases, earn staking rewards.
+                        </p>
+                        <button
+                          class="w-full btn-win primary py-2 text-xs flex items-center justify-center gap-1.5"
+                          disabled={linkStep() !== 'idle'}
+                          onClick={handleLinkWallet}
+                        >
+                          <Show when={linkStep() === 'idle'} fallback={
+                            <span class="animate-pulse">
+                              {linkStep() === 'connecting' ? 'Connecting wallet...' : 'Signing challenge...'}
+                            </span>
+                          }>
+                            <span class="i-mdi-wallet-outline w-3.5 h-3.5" />
+                            Connect Wallet
+                          </Show>
+                        </button>
+                      </Show>
+
+                      <Show when={store.user?.wallet_address && (store.user?.balance || 0) > 0 && linkStep() !== 'done'}>
+                        <p class="text-[10px] text-fg-muted mb-2 leading-relaxed">
+                          Your wallet is linked. Convert your ${store.user?.balance.toFixed(2)} custodial balance
+                          to {((store.user?.balance || 0) / 0.01).toFixed(0)} SONO tokens in your wallet.
+                        </p>
+                        <p class="text-[10px] text-fg-faint mb-3">
+                          By clicking migrate, you agree that SONO tokens are non-refundable utility tokens.
+                          You control your keys — sonotxt cannot reverse this.
+                        </p>
+                        <button
+                          class="w-full btn-win primary py-2 text-xs flex items-center justify-center gap-1.5"
+                          disabled={linkStep() === 'migrating'}
+                          onClick={handleMigrate}
+                        >
+                          <Show when={linkStep() !== 'migrating'} fallback={
+                            <span class="animate-pulse">Sending SONO...</span>
+                          }>
+                            <span class="i-mdi-swap-horizontal w-3.5 h-3.5" />
+                            Migrate ${store.user?.balance.toFixed(2)} → {((store.user?.balance || 0) / 0.01).toFixed(0)} SONO
+                          </Show>
+                        </button>
+                      </Show>
+
+                      <Show when={linkStep() === 'done' && migrateResult()}>
+                        <div class="bg-emerald-50 border border-emerald-200 p-3 text-xs">
+                          <div class="flex items-center gap-1.5 text-emerald-700 mb-1">
+                            <span class="i-mdi-check-circle w-4 h-4" />
+                            Migrated {migrateResult()!.txt_amount.toFixed(0)} SONO to wallet
+                          </div>
+                          <Show when={migrateResult()!.tx_hash}>
+                            <div class="text-[10px] text-emerald-600 font-mono truncate">
+                              tx: {migrateResult()!.tx_hash}
+                            </div>
+                          </Show>
+                        </div>
+                      </Show>
+
+                      <Show when={linkError()}>
+                        <div class="text-xs text-red-700 bg-red-50 border border-red-200 p-2 mt-2">
+                          {linkError()}
+                        </div>
+                      </Show>
+                    </div>
+                  </Show>
+                )
+              })()}
 
               {/* Quick Actions */}
               <div class="grid grid-cols-2 gap-2">
@@ -419,40 +598,40 @@ export default function ProfilePage(props: Props) {
           {/* Deposits Tab */}
           <Show when={tab() === 'deposits'}>
             <div class="space-y-4">
-              {/* TXT Balance */}
+              {/* SONO Balance */}
               <div class="panel-inset p-4">
                 <div class="flex items-center justify-between mb-1">
                   <div class="flex items-center gap-2">
                     <span class="i-mdi-ethereum text-accent w-4 h-4" />
-                    <span class="text-xs text-fg font-heading font-semibold">TXT Balance</span>
+                    <span class="text-xs text-fg font-heading font-semibold">SONO Balance</span>
                   </div>
-                  <span class="text-lg text-accent font-mono">{evm.txtBalance()} TXT</span>
+                  <span class="text-lg text-accent font-mono">{evm.sonoBalance()} SONO</span>
                 </div>
                 <Show when={evm.channelInfo()}>
                   {(ch) => (
                     <div class="text-[10px] text-fg-muted">
-                      {ch().remaining} TXT in active channel ({ch().spent} spent of {ch().deposit} deposited)
+                      {ch().remaining} SONO in active channel ({ch().spent} spent of {ch().deposit} deposited)
                     </div>
                   )}
                 </Show>
               </div>
 
-              {/* Buy TXT */}
+              {/* Buy SONO */}
               <div class="panel-inset p-4">
                 <div class="flex items-center gap-2 mb-3">
                   <span class="i-mdi-swap-horizontal text-accent w-4 h-4" />
-                  <span class="text-xs text-fg font-heading font-semibold">Buy TXT</span>
+                  <span class="text-xs text-fg font-heading font-semibold">Buy SONO</span>
                 </div>
 
                 <Show when={store.user?.wallet_address} fallback={
                   <div class="text-xs text-fg-muted text-center py-2">
-                    Connect a wallet to buy TXT tokens
+                    Connect a wallet to buy SONO tokens
                   </div>
                 }>
                   <div class="space-y-3">
                     {/* Payment method selector */}
                     <div class="flex gap-1">
-                      {(['DOT', 'USDC', 'USDT', 'SONO'] as const).map(m => (
+                      {(['DOT', 'USDC', 'USDT'] as const).map(m => (
                         <button
                           class={`flex-1 py-1.5 text-[10px] font-mono border-2 transition-all ${
                             payMethod() === m
@@ -502,7 +681,7 @@ export default function ProfilePage(props: Props) {
                     {/* Quote */}
                     <Show when={buyQuote()}>
                       <div class="text-xs text-fg bg-accent-soft border border-accent-muted p-2 font-mono text-center">
-                        = {buyQuote()} TXT
+                        = {buyQuote()} SONO
                       </div>
                     </Show>
 
@@ -570,7 +749,7 @@ export default function ProfilePage(props: Props) {
                         class="flex-1 px-2 py-1.5 text-xs bg-surface border border-edge-soft text-fg font-mono"
                         value={channelAmount()}
                         onInput={(e) => setChannelAmount(e.currentTarget.value)}
-                        placeholder="TXT amount"
+                        placeholder="SONO amount"
                       />
                       <button
                         class="btn-win primary py-1.5 px-3 text-xs"
@@ -593,7 +772,7 @@ export default function ProfilePage(props: Props) {
 
                     <Show when={!evm.channelInfo()}>
                       <div class="text-[10px] text-fg-faint">
-                        Open a payment channel to start using sonotxt with TXT tokens.
+                        Open a payment channel to start using sonotxt with SONO tokens.
                         Only 2 on-chain transactions: open and close.
                       </div>
                     </Show>
@@ -607,8 +786,8 @@ export default function ProfilePage(props: Props) {
                 </Show>
               </div>
 
-              {/* Card Payment */}
-              <div class="panel-inset p-4">
+              {/* Card Payment — disabled for hackathon, on-chain only */}
+              <div class="panel-inset p-4 hidden">
                 <div class="flex items-center gap-2 mb-3">
                   <span class="i-mdi-credit-card text-accent w-4 h-4" />
                   <span class="text-xs text-fg font-heading font-semibold">Pay with Card</span>
@@ -665,8 +844,8 @@ export default function ProfilePage(props: Props) {
                 </Show>
               </div>
 
-              {/* Crypto Deposit Addresses */}
-              <div>
+              {/* Crypto Deposit Addresses — disabled for hackathon */}
+              <div class="hidden">
                 <div class="text-[10px] text-fg-muted uppercase mb-2 font-heading">Crypto Deposits</div>
 
                 <Show when={addresses().polkadot_assethub}>
@@ -718,8 +897,8 @@ export default function ProfilePage(props: Props) {
                 </Show>
               </div>
 
-              {/* Recent Deposits */}
-              <div>
+              {/* Recent Deposits — disabled for hackathon */}
+              <div class="hidden">
                 <div class="text-[10px] text-fg-muted uppercase mb-2 font-heading">Recent Deposits</div>
                 <Show when={deposits().length > 0} fallback={
                   <div class="panel-inset text-xs text-fg-muted p-4 text-center">
@@ -768,6 +947,430 @@ export default function ProfilePage(props: Props) {
                 </Show>
               </div>
             </div>
+          </Show>
+
+          {/* Staking Tab */}
+          <Show when={tab() === 'staking'}>
+            {(() => {
+              const [stakeAmount, setStakeAmount] = createSignal('')
+              const [unstakeAmount, setUnstakeAmount] = createSignal('')
+              const [stakeLoading, setStakeLoading] = createSignal(false)
+              const [stakeError, setStakeError] = createSignal<string | null>(null)
+
+              // Load staking data when tab opens
+              createEffect(() => {
+                if (tab() === 'staking' && store.user?.wallet_address) {
+                  evm.refreshStaking().catch(() => {})
+                }
+              })
+
+              async function handleStake() {
+                if (stakeLoading()) return
+                const raw = stakeAmount().trim()
+                if (!raw || parseFloat(raw) <= 0) return
+                setStakeLoading(true)
+                setStakeError(null)
+                try {
+                  await evm.stakeSONO(raw)
+                  setStakeAmount('')
+                  showToast('SONO staked', 'success')
+                } catch (e: any) {
+                  setStakeError(e.message || 'Stake failed')
+                }
+                setStakeLoading(false)
+              }
+
+              async function handleUnstake() {
+                if (stakeLoading()) return
+                const raw = unstakeAmount().trim()
+                if (!raw || parseFloat(raw) <= 0) return
+                setStakeLoading(true)
+                setStakeError(null)
+                try {
+                  await evm.unstakeSONO(raw)
+                  setUnstakeAmount('')
+                  showToast('SONO unstaked', 'success')
+                } catch (e: any) {
+                  setStakeError(e.message || 'Unstake failed')
+                }
+                setStakeLoading(false)
+              }
+
+              async function handleClaim() {
+                if (stakeLoading()) return
+                setStakeLoading(true)
+                setStakeError(null)
+                try {
+                  await evm.claimRewards()
+                  showToast('Rewards claimed', 'success')
+                } catch (e: any) {
+                  setStakeError(e.message || 'Claim failed')
+                }
+                setStakeLoading(false)
+              }
+
+              async function handleRegister() {
+                if (stakeLoading()) return
+                setStakeLoading(true)
+                setStakeError(null)
+                try {
+                  await evm.registerProvider()
+                  showToast('Registered as provider', 'success')
+                } catch (e: any) {
+                  setStakeError(e.message || 'Registration failed')
+                }
+                setStakeLoading(false)
+              }
+
+              async function handleUnregister() {
+                if (stakeLoading()) return
+                setStakeLoading(true)
+                setStakeError(null)
+                try {
+                  await evm.unregisterProvider()
+                  showToast('Unregistered', 'success')
+                } catch (e: any) {
+                  setStakeError(e.message || 'Unregister failed')
+                }
+                setStakeLoading(false)
+              }
+
+              const info = () => evm.stakingInfo()
+              const prov = () => evm.providerInfo()
+
+              return (
+                <Show when={store.user?.wallet_address} fallback={
+                  <div class="text-xs text-fg-muted text-center py-8">
+                    Connect a Polkadot wallet to stake SONO
+                  </div>
+                }>
+                  <div class="space-y-4">
+                    {/* Token Economics */}
+                    <Show when={info()}>
+                      {(i) => (
+                        <div class="panel-inset p-4">
+                          <div class="flex items-center gap-2 mb-3">
+                            <span class="i-mdi-fire text-accent w-4 h-4" />
+                            <span class="text-xs text-fg font-heading font-semibold">Token Economics</span>
+                          </div>
+                          <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                            <div class="flex justify-between col-span-2 pb-1 border-b border-edge-soft">
+                              <span class="text-fg-muted">SONO Price (USDT peg)</span>
+                              <span class="font-mono text-accent font-bold">${i().sonoPriceUsdt}</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">Circulating SONO</span>
+                              <span class="font-mono text-fg">{parseFloat(i().circulatingSupply).toLocaleString('en', { maximumFractionDigits: 0 })}</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">SONO Burned</span>
+                              <span class="font-mono text-red-500">{parseFloat(i().totalBurned).toLocaleString('en', { maximumFractionDigits: 0 })}</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">SONO Burned</span>
+                              <span class="font-mono text-red-500">{parseFloat(i().totalBurned).toLocaleString('en', { maximumFractionDigits: 0 })}</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">SONO Burn Rate</span>
+                              <span class="font-mono text-fg">{(i().burnBps / 100).toFixed(0)}%</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">Platform Cut</span>
+                              <span class="font-mono text-fg">{(i().platformCutBps / 100).toFixed(0)}%</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">Protocol Fee</span>
+                              <span class="font-mono text-fg">{(i().protocolFeeBps / 100).toFixed(1)}%</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">Provider Earnings</span>
+                              <span class="font-mono text-emerald-600">{parseFloat(i().totalProviderEarnings).toLocaleString('en', { maximumFractionDigits: 0 })} SONO</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">Staker Treasury</span>
+                              <span class="font-mono text-accent">{parseFloat(i().treasuryPool).toLocaleString('en', { maximumFractionDigits: 2 })} SONO</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">Total SONO Staked</span>
+                              <span class="font-mono text-fg">{parseFloat(i().totalStaked).toLocaleString('en', { maximumFractionDigits: 0 })}</span>
+                            </div>
+                            <div class="flex justify-between">
+                              <span class="text-fg-muted">Min Provider Stake</span>
+                              <span class="font-mono text-fg">{parseFloat(i().minProviderStake).toLocaleString('en', { maximumFractionDigits: 0 })} SONO</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </Show>
+
+                    {/* Your SONO */}
+                    <div class="panel-inset p-4">
+                      <div class="flex items-center gap-2 mb-3">
+                        <span class="i-mdi-diamond-stone text-accent w-4 h-4" />
+                        <span class="text-xs text-fg font-heading font-semibold">SONO Staking</span>
+                      </div>
+
+                      <Show when={info()}>
+                        {(i) => (
+                          <div class="space-y-3">
+                            <div class="grid grid-cols-3 gap-2 text-center">
+                              <div class="bg-accent-soft border border-accent-muted p-2">
+                                <div class="text-xs font-mono text-fg">{i().sonoBalance}</div>
+                                <div class="text-[9px] text-fg-muted">available</div>
+                              </div>
+                              <div class="bg-accent-soft border border-accent-muted p-2">
+                                <div class="text-xs font-mono text-accent-strong font-bold">{i().sonoStaked}</div>
+                                <div class="text-[9px] text-fg-muted">staked</div>
+                              </div>
+                              <div class="bg-accent-soft border border-accent-muted p-2">
+                                <div class="text-xs font-mono text-accent">{i().pendingRewards}</div>
+                                <div class="text-[9px] text-fg-muted">rewards</div>
+                              </div>
+                            </div>
+
+                            {/* Claim rewards */}
+                            <Show when={parseFloat(i().pendingRewards) > 0}>
+                              <button
+                                class="w-full btn-win primary py-2 text-xs flex items-center justify-center gap-1.5"
+                                disabled={stakeLoading()}
+                                onClick={handleClaim}
+                              >
+                                <span class="i-mdi-gift w-3.5 h-3.5" />
+                                Claim {parseFloat(i().pendingRewards).toFixed(2)} SONO
+                              </button>
+                            </Show>
+
+                            {/* Stake */}
+                            <div>
+                              <div class="text-[10px] text-fg-muted uppercase font-heading mb-1">Stake SONO</div>
+                              <div class="flex gap-2">
+                                <input
+                                  type="number"
+                                  class="flex-1 px-2 py-1.5 text-xs bg-surface border border-edge-soft text-fg font-mono"
+                                  value={stakeAmount()}
+                                  onInput={(e) => setStakeAmount(e.currentTarget.value)}
+                                  placeholder="Amount"
+                                  step="any"
+                                />
+                                <button
+                                  class="btn-win primary py-1.5 px-3 text-xs"
+                                  disabled={stakeLoading() || !stakeAmount()}
+                                  onClick={handleStake}
+                                >
+                                  <Show when={stakeLoading()} fallback="Stake">
+                                    <span class="animate-pulse">...</span>
+                                  </Show>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Unstake */}
+                            <Show when={parseFloat(i().sonoStaked) > 0}>
+                              <div>
+                                <div class="text-[10px] text-fg-muted uppercase font-heading mb-1">Unstake SONO</div>
+                                <div class="flex gap-2">
+                                  <input
+                                    type="number"
+                                    class="flex-1 px-2 py-1.5 text-xs bg-surface border border-edge-soft text-fg font-mono"
+                                    value={unstakeAmount()}
+                                    onInput={(e) => setUnstakeAmount(e.currentTarget.value)}
+                                    placeholder="Amount"
+                                    step="any"
+                                  />
+                                  <button
+                                    class="btn-win py-1.5 px-3 text-xs"
+                                    disabled={stakeLoading() || !unstakeAmount()}
+                                    onClick={handleUnstake}
+                                  >
+                                    <Show when={stakeLoading()} fallback="Unstake">
+                                      <span class="animate-pulse">...</span>
+                                    </Show>
+                                  </button>
+                                </div>
+                              </div>
+                            </Show>
+                          </div>
+                        )}
+                      </Show>
+
+                      <Show when={!info()}>
+                        <div class="flex items-center justify-center py-4">
+                          <span class="i-mdi-loading w-4 h-4 text-accent animate-spin" />
+                          <span class="text-xs text-fg-muted ml-2">Loading...</span>
+                        </div>
+                      </Show>
+                    </div>
+
+                    {/* Provider Registration */}
+                    <div class="panel-inset p-4">
+                      <div class="flex items-center gap-2 mb-3">
+                        <span class="i-mdi-server-network text-accent w-4 h-4" />
+                        <span class="text-xs text-fg font-heading font-semibold">Provider</span>
+                      </div>
+
+                      <Show when={prov()}>
+                        {(p) => (
+                          <Show when={p().registered} fallback={
+                            <div class="space-y-3">
+                              <p class="text-[10px] text-fg-muted leading-relaxed">
+                                Register as an inference provider to serve TTS/ASR/LLM requests and earn SONO from the marketplace.
+                                Requires staking at least {info()?.minProviderStake || '1,000'} SONO.
+                              </p>
+                              <Show when={info() && parseFloat(info()!.sonoStaked) >= parseFloat(info()!.minProviderStake)}>
+                                <button
+                                  class="w-full btn-win primary py-2 text-xs flex items-center justify-center gap-1.5"
+                                  disabled={stakeLoading()}
+                                  onClick={handleRegister}
+                                >
+                                  <span class="i-mdi-check-decagram w-3.5 h-3.5" />
+                                  Register as Provider
+                                </button>
+                              </Show>
+                              <Show when={info() && parseFloat(info()!.sonoStaked) < parseFloat(info()!.minProviderStake)}>
+                                <div class="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 p-2">
+                                  Stake at least {info()!.minProviderStake} SONO above to register.
+                                  You have {info()!.sonoStaked} staked.
+                                </div>
+                              </Show>
+                            </div>
+                          }>
+                            {(() => {
+                              const [endpointUrl, setEndpointUrl] = createSignal('')
+                              const [endpointName, setEndpointName] = createSignal('')
+                              const [endpointSaving, setEndpointSaving] = createSignal(false)
+                              const [endpointStatus, setEndpointStatus] = createSignal<string | null>(null)
+
+                              async function handleSetEndpoint() {
+                                const tok = token()
+                                const url = endpointUrl().trim()
+                                if (!tok || !url) return
+                                setEndpointSaving(true)
+                                setStakeError(null)
+                                try {
+                                  const result = await api.setProviderEndpoint(tok, url, endpointName().trim() || undefined)
+                                  setEndpointStatus(`Active: ${result.speech_url}`)
+                                  showToast('Endpoint configured', 'success')
+                                } catch (e: any) {
+                                  setStakeError(e.message || 'Failed to set endpoint')
+                                }
+                                setEndpointSaving(false)
+                              }
+
+                              async function handleDeactivate() {
+                                const tok = token()
+                                if (!tok) return
+                                setEndpointSaving(true)
+                                try {
+                                  await api.deactivateProviderEndpoint(tok)
+                                  setEndpointStatus(null)
+                                  showToast('Endpoint deactivated', 'success')
+                                } catch (e: any) {
+                                  setStakeError(e.message || 'Failed to deactivate')
+                                }
+                                setEndpointSaving(false)
+                              }
+
+                              return (
+                                <div class="space-y-3">
+                                  <div class="flex items-center gap-2 mb-2">
+                                    <span class="i-mdi-check-circle text-emerald-600 w-4 h-4" />
+                                    <span class="text-xs text-emerald-700">Registered Provider</span>
+                                  </div>
+                                  <div class="grid grid-cols-2 gap-2 text-center">
+                                    <div class="bg-accent-soft border border-accent-muted p-2">
+                                      <div class="text-xs font-mono text-fg">{p().staked}</div>
+                                      <div class="text-[9px] text-fg-muted">SONO staked</div>
+                                    </div>
+                                    <div class="bg-accent-soft border border-accent-muted p-2">
+                                      <div class="text-xs font-mono text-accent">{p().totalServed}</div>
+                                      <div class="text-[9px] text-fg-muted">SONO served</div>
+                                    </div>
+                                  </div>
+
+                                  {/* Worker Endpoint */}
+                                  <div class="border-t border-edge-soft pt-3">
+                                    <div class="text-[10px] text-fg-muted uppercase font-heading mb-2">Worker Endpoint</div>
+                                    <Show when={endpointStatus()}>
+                                      <div class="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 p-2 mb-2">
+                                        <span class="i-mdi-check-circle w-3.5 h-3.5" />
+                                        <span class="font-mono text-[10px] truncate">{endpointStatus()}</span>
+                                      </div>
+                                    </Show>
+                                    <div class="space-y-2">
+                                      <input
+                                        type="text"
+                                        class="w-full px-2 py-1.5 text-xs bg-surface border border-edge-soft text-fg font-mono"
+                                        value={endpointUrl()}
+                                        onInput={(e) => setEndpointUrl(e.currentTarget.value)}
+                                        placeholder="http://your-worker:8080"
+                                      />
+                                      <input
+                                        type="text"
+                                        class="w-full px-2 py-1.5 text-xs bg-surface border border-edge-soft text-fg"
+                                        value={endpointName()}
+                                        onInput={(e) => setEndpointName(e.currentTarget.value)}
+                                        placeholder="Display name (optional)"
+                                      />
+                                      <div class="flex gap-2">
+                                        <button
+                                          class="flex-1 btn-win primary py-1.5 text-xs"
+                                          disabled={endpointSaving() || !endpointUrl().trim()}
+                                          onClick={handleSetEndpoint}
+                                        >
+                                          <Show when={!endpointSaving()} fallback={<span class="animate-pulse">...</span>}>
+                                            Set Endpoint
+                                          </Show>
+                                        </button>
+                                        <Show when={endpointStatus()}>
+                                          <button
+                                            class="btn-win py-1.5 px-3 text-xs text-amber-600"
+                                            disabled={endpointSaving()}
+                                            onClick={handleDeactivate}
+                                          >
+                                            Deactivate
+                                          </button>
+                                        </Show>
+                                      </div>
+                                    </div>
+                                    <p class="text-[10px] text-fg-faint mt-2">
+                                      Your worker must expose /synthesize (TTS) and /health endpoints.
+                                      Run the sonotxt-worker Docker image on your GPU server.
+                                    </p>
+                                  </div>
+
+                                  <button
+                                    class="w-full btn-win py-2 text-xs text-red-600 hover:text-red-700"
+                                    disabled={stakeLoading()}
+                                    onClick={handleUnregister}
+                                  >
+                                    Unregister
+                                  </button>
+                                </div>
+                              )
+                            })()}
+                          </Show>
+                        )}
+                      </Show>
+                    </div>
+
+                    {/* Explainer */}
+                    <div class="panel-inset p-3">
+                      <div class="text-[10px] text-fg-faint leading-relaxed space-y-1">
+                        <p>SONO is deflationary. 90% of the platform cut is burned on every settlement. More usage → less supply → SONO appreciates.</p>
+                        <p>Stake SONO to earn a share of the 10% treasury from all inference spend. Providers stake SONO to register on the marketplace and serve requests.</p>
+                      </div>
+                    </div>
+
+                    {/* Error */}
+                    <Show when={stakeError()}>
+                      <div class="text-xs text-red-700 bg-red-50 border border-red-200 p-2">
+                        {stakeError()}
+                      </div>
+                    </Show>
+                  </div>
+                </Show>
+              )
+            })()}
           </Show>
 
           {/* API Keys Tab */}

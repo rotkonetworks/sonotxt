@@ -211,6 +211,74 @@ export async function walletVerify(
   })
 }
 
+// Wallet upgrade (custodial → on-chain)
+
+export async function walletLink(
+  token: string,
+  address: string,
+  challenge: string,
+  signature: string
+): Promise<{ status: string; wallet_address: string }> {
+  return request('/api/auth/wallet/link', {
+    method: 'POST',
+    body: JSON.stringify({ token, address, challenge, signature }),
+  })
+}
+
+export interface MigrateResponse {
+  status: string
+  usd_migrated: number
+  txt_amount: number
+  wallet_address: string
+  tx_hash?: string
+}
+
+export async function walletMigrate(token: string): Promise<MigrateResponse> {
+  return request('/api/auth/wallet/migrate', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
+// Provider endpoints
+
+export interface ProviderEndpointResponse {
+  status: string
+  provider_address: string
+  speech_url: string
+  llm_url: string
+}
+
+export async function setProviderEndpoint(
+  token: string,
+  speech_url: string,
+  display_name?: string
+): Promise<ProviderEndpointResponse> {
+  return request('/api/provider/endpoint', {
+    method: 'POST',
+    body: JSON.stringify({ token, speech_url, display_name }),
+  })
+}
+
+export async function deactivateProviderEndpoint(token: string): Promise<{ status: string }> {
+  return request('/api/provider/endpoint/deactivate', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
+export interface ProviderListItem {
+  provider_address: string
+  display_name?: string
+  healthy: boolean
+  total_requests: number
+  latency_ms?: number
+}
+
+export async function listProviders(): Promise<ProviderListItem[]> {
+  return request('/api/provider/list')
+}
+
 // Free balance
 export interface FreeBalanceResponse {
   remaining: number

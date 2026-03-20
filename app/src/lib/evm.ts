@@ -3,22 +3,23 @@
 
 import { createSignal } from 'solid-js'
 import { createClient, Binary } from 'polkadot-api'
-import { getWsProvider } from 'polkadot-api/ws-provider/web'
+import { getWsProvider } from 'polkadot-api/ws'
 import { connectInjectedExtension } from 'polkadot-api/pjs-signer'
 import { paseo_ah } from '@polkadot-api/descriptors'
 import {
   createPublicClient,
   http,
+  webSocket,
   formatUnits,
   parseUnits,
   encodeFunctionData,
   type Address,
 } from 'viem'
-import { assetHubChain, SUBSTRATE_RPC, CONTRACT_ADDRESS, TXT_ABI, ERC20_ABI, TXT_DECIMALS, TOKENS } from './contract'
+import { assetHubChain, SUBSTRATE_RPC, CONTRACT_ADDRESS, SONO_ABI, ERC20_ABI, SONO_DECIMALS, TOKENS } from './contract'
 import { connectedWallet, selectedAccount } from './wallet'
 
 // Reactive state
-const [txtBalance, setTxtBalance] = createSignal<string>('0')
+const [sonoBalance, setTxtBalance] = createSignal<string>('0')
 const [channelInfo, setChannelInfo] = createSignal<{
   deposit: string
   spent: string
@@ -85,25 +86,25 @@ async function _refreshInner() {
   // Get TXT balance
   const bal = await client.readContract({
     address: CONTRACT_ADDRESS,
-    abi: TXT_ABI,
+    abi: SONO_ABI,
     functionName: 'balanceOf',
     args: [evmAddr],
   })
-  setTxtBalance(formatUnits(bal, TXT_DECIMALS))
+  setTxtBalance(formatUnits(bal, SONO_DECIMALS))
 
   // Get channel to sonotxt service
   const [deposit, spent, nonce, expiresAt] = await client.readContract({
     address: CONTRACT_ADDRESS,
-    abi: TXT_ABI,
+    abi: SONO_ABI,
     functionName: 'getChannel',
     args: [evmAddr, SONOTXT_SERVICE],
   })
 
   if (deposit > 0n) {
     setChannelInfo({
-      deposit: formatUnits(deposit, TXT_DECIMALS),
-      spent: formatUnits(spent, TXT_DECIMALS),
-      remaining: formatUnits(spent > deposit ? 0n : deposit - spent, TXT_DECIMALS),
+      deposit: formatUnits(deposit, SONO_DECIMALS),
+      spent: formatUnits(spent, SONO_DECIMALS),
+      remaining: formatUnits(spent > deposit ? 0n : deposit - spent, SONO_DECIMALS),
       nonce,
       isOpen: true,
       isClosing: expiresAt > 0n,
@@ -164,20 +165,20 @@ async function submitReviveCall(opts: {
 
 // Shorthand for TXT contract calls
 async function submitContractCall(functionName: string, args: any[]) {
-  await submitReviveCall({ dest: CONTRACT_ADDRESS, abi: TXT_ABI, functionName, args })
+  await submitReviveCall({ dest: CONTRACT_ADDRESS, abi: SONO_ABI, functionName, args })
   await refresh()
 }
 
 // Open channel to sonotxt
 async function openChannel(amount: string) {
-  const parsedAmount = parseUnits(amount, TXT_DECIMALS)
+  const parsedAmount = parseUnits(amount, SONO_DECIMALS)
   if (parsedAmount <= 0n) throw new Error('Amount must be positive')
   await submitContractCall('openChannel', [SONOTXT_SERVICE, parsedAmount])
 }
 
 // Top up existing channel
 async function topUp(amount: string) {
-  const parsedAmount = parseUnits(amount, TXT_DECIMALS)
+  const parsedAmount = parseUnits(amount, SONO_DECIMALS)
   if (parsedAmount <= 0n) throw new Error('Amount must be positive')
   await submitContractCall('topUp', [SONOTXT_SERVICE, parsedAmount])
 }
@@ -188,7 +189,7 @@ async function topUp(amount: string) {
 async function buyWithDot(amount: bigint) {
   await submitReviveCall({
     dest: CONTRACT_ADDRESS,
-    abi: TXT_ABI,
+    abi: SONO_ABI,
     functionName: 'buyWithDot',
     value: amount,
   })
@@ -208,7 +209,7 @@ async function buyWithToken(token: Address, amount: bigint) {
   // Step 2: buy
   await submitReviveCall({
     dest: CONTRACT_ADDRESS,
-    abi: TXT_ABI,
+    abi: SONO_ABI,
     functionName: 'buyWithToken',
     args: [token, amount],
   })
@@ -220,17 +221,17 @@ async function buyWithToken(token: Address, amount: bigint) {
 async function quoteBuyDot(dotAmount: bigint): Promise<string> {
   const client = readClient()
   const raw = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'quoteBuyDot', args: [dotAmount],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'quoteBuyDot', args: [dotAmount],
   })
-  return formatUnits(raw, TXT_DECIMALS)
+  return formatUnits(raw, SONO_DECIMALS)
 }
 
 async function quoteBuyToken(token: Address, amount: bigint): Promise<string> {
   const client = readClient()
   const raw = await client.readContract({
-    address: CONTRACT_ADDRESS, abi: TXT_ABI, functionName: 'quoteBuyToken', args: [token, amount],
+    address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'quoteBuyToken', args: [token, amount],
   })
-  return formatUnits(raw, TXT_DECIMALS)
+  return formatUnits(raw, SONO_DECIMALS)
 }
 
 // Fetch token balance for user's EVM address
@@ -251,14 +252,118 @@ async function getNativeBalance(): Promise<bigint> {
   return client.getBalance({ address: evmAddr })
 }
 
+// --- SONO Staking ---
+
+const [stakingInfo, setStakingInfo] = createSignal<{
+  sonoStaked: string
+  pendingRewards: string
+  totalStaked: string
+  totalBurned: string
+  circulatingSupply: string
+  treasuryPool: string
+  burnBps: number
+  minProviderStake: string
+  sonoBalance: string
+  protocolFeeBps: number
+  sonoPriceUsdt: string
+  platformCutBps: number
+  totalProviderEarnings: string
+} | null>(null)
+
+const [providerInfo, setProviderInfo] = createSignal<{
+  registered: boolean
+  staked: string
+  totalServed: string
+} | null>(null)
+
+async function refreshStaking() {
+  const evmAddr = await getEvmAddress()
+  if (!evmAddr) return
+  const client = readClient()
+  const SONO_DECIMALS = 10
+
+  const [staked, pending, totalStakedVal, burned, circulating, pool, bps, minStake, sonoBal, provider, feeBps, priceUsdt, cutBps, provEarnings] = await Promise.all([
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'staked', args: [evmAddr] }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'pendingRewards', args: [evmAddr] }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'totalStaked' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'totalBurned' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'circulatingSupply' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'treasuryPool' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'burnBps' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'minProviderStake' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'balanceOf', args: [evmAddr] }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'providers', args: [evmAddr] }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'protocolFeeBps' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'sonoPriceUsdt' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'platformCutBps' }),
+    client.readContract({ address: CONTRACT_ADDRESS, abi: SONO_ABI, functionName: 'totalProviderEarnings' }),
+  ])
+
+  setStakingInfo({
+    sonoStaked: formatUnits(staked, SONO_DECIMALS),
+    pendingRewards: formatUnits(pending, SONO_DECIMALS),
+    totalStaked: formatUnits(totalStakedVal, SONO_DECIMALS),
+    totalBurned: formatUnits(burned, SONO_DECIMALS),
+    circulatingSupply: formatUnits(circulating, SONO_DECIMALS),
+    treasuryPool: formatUnits(pool, SONO_DECIMALS),
+    burnBps: Number(bps),
+    minProviderStake: formatUnits(minStake, SONO_DECIMALS),
+    sonoBalance: formatUnits(sonoBal, SONO_DECIMALS),
+    protocolFeeBps: Number(feeBps),
+    sonoPriceUsdt: (Number(priceUsdt) / 1e6).toFixed(4),
+    platformCutBps: Number(cutBps),
+    totalProviderEarnings: formatUnits(provEarnings, SONO_DECIMALS),
+  })
+
+  const [registered, provStaked, totalServed] = provider as [boolean, bigint, bigint]
+  setProviderInfo({
+    registered,
+    staked: formatUnits(provStaked, SONO_DECIMALS),
+    totalServed: formatUnits(totalServed, SONO_DECIMALS),
+  })
+}
+
+async function stakeSONO(amount: string) {
+  const parsed = parseUnits(amount, 10) // SONO has 10 decimals
+  if (parsed <= 0n) throw new Error('Amount must be positive')
+  // Single token — staking is internal, no approve needed
+  await submitContractCall('stake', [parsed])
+  await refreshStaking()
+}
+
+async function unstakeSONO(amount: string) {
+  const parsed = parseUnits(amount, 10)
+  if (parsed <= 0n) throw new Error('Amount must be positive')
+  await submitContractCall('unstake', [parsed])
+  await refreshStaking()
+}
+
+async function claimRewards() {
+  await submitContractCall('claimRewards', [])
+  await refreshStaking()
+}
+
+async function registerProvider() {
+  await submitContractCall('registerProvider', [])
+  await refreshStaking()
+}
+
+async function unregisterProvider() {
+  await submitContractCall('unregisterProvider', [])
+  await refreshStaking()
+}
+
 export {
-  txtBalance,
+  sonoBalance,
   channelInfo,
   txPending,
   txError,
+  stakingInfo,
+  providerInfo,
   SONOTXT_SERVICE,
   TOKENS,
   refresh,
+  refreshStaking,
   openChannel,
   topUp,
   getEvmAddress,
@@ -268,4 +373,9 @@ export {
   quoteBuyToken,
   getTokenBalance,
   getNativeBalance,
+  stakeSONO,
+  unstakeSONO,
+  claimRewards,
+  registerProvider,
+  unregisterProvider,
 }

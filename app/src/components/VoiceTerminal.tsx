@@ -1,5 +1,8 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js'
 import type { HistoryItem } from '../lib/store'
+import { scrollFade } from '../lib/scrollFade'
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+scrollFade;
 
 const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
 
@@ -922,7 +925,7 @@ export default function VoiceTerminal(props: Props) {
       {/* Bottom control strip */}
       <div class="bg-surface border-t-2 border-edge">
         {/* Controls row — voice + language + clear */}
-        <div class="flex items-center gap-1.5 px-4 sm:px-6 lg:px-8 py-2 border-b border-edge-soft overflow-x-auto scroll-fade">
+        <div use:scrollFade class="flex items-center gap-1.5 px-4 sm:px-6 lg:px-8 py-2 border-b border-edge-soft overflow-x-auto">
           <span class="text-[10px] text-fg-faint font-heading uppercase tracking-wider flex-shrink-0 mr-1">Voice</span>
           <For each={SPEAKERS}>
             {(s) => (

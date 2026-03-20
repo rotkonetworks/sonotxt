@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>sonotxt - Pallet Bridge</title>
+  <meta name="description" content="Solidity-to-Substrate pallet composability bridge for Polkadot Asset Hub. Call any pallet from any EVM contract.">
+  <link rel="icon" type="image/svg+xml" href="https://sonotxt.com/favicon.svg">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    :root {
+      --bg: #18181b;
+      --surface: #27272a;
+      --fg: #fafafa;
+      --fg-muted: #a1a1aa;
+      --fg-faint: #71717a;
+      --accent: #fb7185;
+      --accent-hover: #f43f5e;
+      --accent-strong: #fda4af;
+      --accent-soft: #3f1219;
+      --accent-muted: #5c1a28;
+      --accent-faint: #881337;
+      --border: #52525b;
+      --border-soft: #3f3f46;
+      --shadow: 0.25rem 0.25rem 0 0 #09090b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { font-size: 13px; }
+
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'JetBrains Mono', 'IBM Plex Mono', monospace;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    ::selection {
+      background: var(--accent-muted);
+      color: var(--accent-strong);
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* layout */
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    /* header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 0;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 2.5rem;
+    }
+
+    .logo {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--fg);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+    }
+
+    .logo:hover { text-decoration: none; }
+
+    .logo-accent { color: var(--accent); }
+
+    .nav {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    .nav a {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--fg-muted);
+    }
+
+    .nav a:hover { color: var(--accent); text-decoration: none; }
+
+    /* hero */
+    .hero {
+      text-align: center;
+      padding: 2rem 0 2.5rem;
+    }
+
+    .hero h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      margin-bottom: 1rem;
+      color: var(--fg);
+    }
+
+    .hero h1 span { color: var(--accent); }
+
+    .hero p {
+      font-size: 12px;
+      color: var(--fg-muted);
+      line-height: 1.8;
+      max-width: 580px;
+      margin: 0 auto;
+    }
+
+    .badge {
+      display: inline-block;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 3px 10px;
+      border: 1px solid var(--accent-faint);
+      color: var(--accent);
+      background: var(--accent-soft);
+      margin-bottom: 1.5rem;
+    }
+
+    /* panels */
+    .panel {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      box-shadow: var(--shadow);
+      margin-bottom: 2rem;
+    }
+
+    .panel-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 8px 14px;
+      border-bottom: 2px solid var(--border);
+      color: var(--fg-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-body { padding: 1rem 1.25rem; }
+
+    /* diagram */
+    .diagram {
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--fg-muted);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .diagram .hl { color: var(--accent); }
+    .diagram .dim { color: var(--fg-faint); }
+
+    /* code blocks */
+    pre {
+      background: #09090b;
+      border: 1px solid var(--border-soft);
+      padding: 1rem;
+      overflow-x: auto;
+      font-size: 11px;
+      line-height: 1.7;
+    }
+
+    code { font-family: 'JetBrains Mono', monospace; }
+
+    .kw { color: #c084fc; }
+    .fn { color: #38bdf8; }
+    .str { color: #4ade80; }
+    .cm { color: #71717a; }
+    .num { color: #fbbf24; }
+    .op { color: #fb7185; }
+    .ty { color: #f472b6; }
+
+    /* address table */
+    .addr-table {
+      width: 100%;
+      font-size: 11px;
+      border-collapse: collapse;
+    }
+
+    .addr-table th {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-align: left;
+      padding: 6px 0;
+      color: var(--fg-faint);
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .addr-table td {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    .addr-table td:first-child { color: var(--fg-muted); }
+    .addr-table .mono { font-size: 10px; color: var(--accent-strong); word-break: break-all; }
+
+    .status-live {
+      display: inline-block;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 2px 8px;
+      background: #064e3b;
+      color: #34d399;
+      border: 1px solid #065f46;
+    }
+
+    .status-planned {
+      display: inline-block;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 2px 8px;
+      background: var(--surface);
+      color: var(--fg-faint);
+      border: 1px solid var(--border-soft);
+    }
+
+    /* section headings */
+    h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--fg-muted);
+      margin: 2.5rem 0 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border-soft);
+    }
+
+    h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--fg-muted);
+      margin: 1.5rem 0 0.5rem;
+    }
+
+    p, li {
+      font-size: 12px;
+      line-height: 1.8;
+      color: var(--fg-muted);
+    }
+
+    ul {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    ul li::before {
+      content: ">";
+      color: var(--accent);
+      margin-right: 8px;
+      font-weight: 600;
+    }
+
+    ul li {
+      padding: 2px 0;
+    }
+
+    /* CTA */
+    .cta-row {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin: 2rem 0;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 8px 20px;
+      border: 2px solid var(--border);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .btn:hover { text-decoration: none; }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent-faint);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: var(--accent-hover); }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--fg);
+    }
+
+    .btn-secondary:hover { background: var(--bg); }
+
+    /* security list */
+    .sec-list {
+      counter-reset: sec;
+    }
+
+    .sec-list li {
+      counter-increment: sec;
+      padding: 6px 0;
+    }
+
+    .sec-list li::before {
+      content: counter(sec) ".";
+      color: var(--accent);
+      margin-right: 8px;
+      font-weight: 600;
+    }
+
+    /* footer */
+    .footer {
+      border-top: 2px solid var(--border);
+      padding: 1.5rem 0;
+      margin-top: 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .footer-left {
+      font-size: 10px;
+      color: var(--fg-faint);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .footer-links a {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--fg-faint);
+    }
+
+    .footer-links a:hover { color: var(--accent); }
+
+    /* responsive */
+    @media (max-width: 600px) {
+      .container { padding: 1rem; }
+      .header { flex-direction: column; gap: 0.75rem; }
+      .hero h1 { font-size: 20px; letter-spacing: 2px; }
+      .cta-row { flex-direction: column; }
+      .btn { justify-content: center; }
+      .footer { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- header -->
+    <header class="header">
+      <a href="https://sonotxt.com" class="logo">
+        <span class="logo-accent">&gt;</span> sonotxt <span style="color:var(--fg-faint)">/</span> pallet bridge
+      </a>
+      <nav class="nav">
+        <a href="https://sonotxt.com">App</a>
+        <a href="https://papi.rotko.net/script">PAPI Console</a>
+        <a href="https://github.com/nickkuk/sonotxt">GitHub</a>
+      </nav>
+    </header>
+
+    <!-- hero -->
+    <section class="hero">
+      <div class="badge">First on pallet-revive</div>
+      <h1>Solidity <span>&harr;</span> Substrate<br>Pallet Bridge</h1>
+      <p>
+        A permissionless composability bridge that enables any Solidity contract
+        on Polkadot Asset Hub to call any Substrate pallet dispatchable.
+        No SCALE on-chain. Runtime-upgrade safe. Public good.
+      </p>
+    </section>
+
+    <!-- CTA row -->
+    <div class="cta-row">
+      <a href="https://papi.rotko.net/script?code=JTJGJTJGJTIwQXNzZXRTd2FwJTIwQnJpZGdlJTIwRGVtbyUyMCVFMiU4MCU5NCUyMFBhc2VvJTIwQXNzZXQlMjBIdWIlMEElMkYlMkYlMjBFbmNvZGVzJTIwYSUyMHBhbGxldCUyMGNhbGwlMjBhcyUyMFNDQUxFJTIwYnl0ZXMlMjBhbmQlMjBjYWxscyUyMHRoZSUyMGJyaWRnZSUyMGNvbnRyYWN0JTBBJTBBY29uc3QlMjBzaWduZXIlMjAlM0QlMjBjcmVhdGVTaWduZXIoKSUyMCUyMCUyRiUyRiUyMEFsaWNlJTBBJTBBY29uc3QlMjBBU1NFVF9TV0FQJTIwJTNEJTIwJ2JiNWE0NDFiZmNlNTFjNWIxZmQ1Y2Q2MDNiODdjOTc4N2E4YmE3YjcnJTBBJTBBJTJGJTJGJTIwRW5jb2RlJTIwYW4lMjBBc3NldENvbnZlcnNpb24lMjBzd2FwJTIwdmlhJTIwUEFQSSUyMG1ldGFkYXRhJTBBY29uc3QlMjBzd2FwVHglMjAlM0QlMjBhcGkudHguQXNzZXRDb252ZXJzaW9uLnN3YXBfZXhhY3RfdG9rZW5zX2Zvcl90b2tlbnMoJTdCJTBBJTIwJTIwcGF0aCUzQSUyMCU1QiUwQSUyMCUyMCUyMCUyMCU3QiUyMHBhcmVudHMlM0ElMjAwJTJDJTIwaW50ZXJpb3IlM0ElMjAlN0IlMjB0eXBlJTNBJTIwJ0hlcmUnJTJDJTIwdmFsdWUlM0ElMjB1bmRlZmluZWQlMjAlN0QlMjAlN0QlMkMlMEElMjAlMjAlMjAlMjAlN0IlMjBwYXJlbnRzJTNBJTIwMCUyQyUyMGludGVyaW9yJTNBJTIwJTdCJTIwdHlwZSUzQSUyMCdYMiclMkMlMjB2YWx1ZSUzQSUyMCU1QiUwQSUyMCUyMCUyMCUyMCUyMCUyMCU3QiUyMHR5cGUlM0ElMjAnUGFsbGV0SW5zdGFuY2UnJTJDJTIwdmFsdWUlM0ElMjA1MCUyMCU3RCUyQyUwQSUyMCUyMCUyMCUyMCUyMCUyMCU3QiUyMHR5cGUlM0ElMjAnR2VuZXJhbEluZGV4JyUyQyUyMHZhbHVlJTNBJTIwMTk4NG4lMjAlN0QlMkMlMEElMjAlMjAlMjAlMjAlNUQlN0QlN0QlMkMlMEElMjAlMjAlNUQlMkMlMEElMjAlMjBhbW91bnRfaW4lM0ElMjAxXzAwMF8wMDBfMDAwXzAwMG4lMkMlMEElMjAlMjBhbW91bnRfb3V0X21pbiUzQSUyMDBuJTJDJTBBJTIwJTIwc2VuZF90byUzQSUyMCc1R3J3dmFFRjV6WGIyNkZ6OXJjUXBEV1M1N0N0RVJIcE5laFhDUGNOb0hHS3V0UVknJTJDJTBBJTIwJTIwa2VlcF9hbGl2ZSUzQSUyMHRydWUlMkMlMEElN0QpJTBBJTBBY29uc3QlMjBzY2FsZUJ5dGVzJTIwJTNEJTIwc3dhcFR4LmdldEVuY29kZWREYXRhKCklMEFjb25zb2xlLmxvZygnU0NBTEUtZW5jb2RlZCUyMHN3YXAlM0EnJTJDJTIwc2NhbGVCeXRlcy5hc0hleCgpLnNsaWNlKDAlMkMlMjA0MCklMjAlMkIlMjAnLi4uJyklMEElMEElMkYlMkYlMjBCdWlsZCUyMFJldml2ZS5jYWxsJTIwdG8lMjBmb3J3YXJkJTIwdGhyb3VnaCUyMHRoZSUyMGJyaWRnZSUwQWNvbnN0JTIwcmV2aXZlVHglMjAlM0QlMjBhcGkudHguUmV2aXZlLmNhbGwoJTdCJTBBJTIwJTIwZGVzdCUzQSUyMEJpbmFyeS5mcm9tSGV4KEFTU0VUX1NXQVApJTJDJTBBJTIwJTIwdmFsdWUlM0ElMjAwbiUyQyUwQSUyMCUyMGdhc19saW1pdCUzQSUyMCU3QiUyMHJlZl90aW1lJTNBJTIwNTAwXzAwMF8wMDBfMDAwbiUyQyUyMHByb29mX3NpemUlM0ElMjA1MDBfMDAwbiUyMCU3RCUyQyUwQSUyMCUyMHN0b3JhZ2VfZGVwb3NpdF9saW1pdCUzQSUyMDFfMDAwXzAwMF8wMDBfMDAwbiUyQyUwQSUyMCUyMGRhdGElM0ElMjBzY2FsZUJ5dGVzJTJDJTBBJTdEKSUwQSUwQWNvbnNvbGUubG9nKCdCcmlkZ2UlMjBjYWxsJTIwYnVpbHQlMjAlRTIlODAlOTQlMjB0YXJnZXQlM0ElMjAweCclMjAlMkIlMjBBU1NFVF9TV0FQKSUwQWNvbnNvbGUubG9nKCdTdWJtaXQlM0ElMjBhd2FpdCUyMHJldml2ZVR4LnNpZ25BbmRTdWJtaXQoc2lnbmVyKScpJTBB" class="btn btn-primary">
+        Try Live Demo &rarr;
+      </a>
+      <a href="https://github.com/nickkuk/sonotxt/blob/master/docs/pallet-bridge.md" class="btn btn-secondary">
+        Full Documentation
+      </a>
+    </div>
+
+    <!-- architecture diagram -->
+    <div class="panel">
+      <div class="panel-title">Architecture</div>
+      <div class="panel-body">
+        <div class="diagram"><span class="hl">Frontend (PAPI + viem)</span>
+    <span class="dim">|</span>
+    <span class="dim">1.</span> Encode pallet call as SCALE bytes
+       using runtime metadata (PAPI)
+    <span class="dim">|</span>
+    <span class="dim">2.</span> Call AssetSwap.dispatchPallet(scaleBytes)
+       via <span class="hl">Revive.call</span> extrinsic
+    <span class="dim">|</span>
+    <span class="dim">v</span>
+<span class="hl">AssetSwap Contract</span> <span class="dim">(Solidity / pallet-revive)</span>
+    <span class="dim">|</span>
+    <span class="dim">3.</span> call(<span class="hl">RUNTIME_PALLETS_ADDR</span>, scaleBytes)
+    <span class="dim">|</span>
+    <span class="dim">v</span>
+<span class="hl">Target Pallet</span> <span class="dim">(AssetConversion, Assets, System, ...)</span></div>
+      </div>
+    </div>
+
+    <!-- addresses -->
+    <div class="panel">
+      <div class="panel-title">Contract Addresses</div>
+      <div class="panel-body">
+        <table class="addr-table">
+          <thead>
+            <tr><th>Network</th><th>Address</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Paseo Asset Hub</td>
+              <td class="mono">0xbb5a441bfce51c5b1fd5cd603b87c9787a8ba7b7</td>
+              <td><span class="status-live">Live</span></td>
+            </tr>
+            <tr>
+              <td>Polkadot Asset Hub</td>
+              <td class="mono" style="color:var(--fg-faint)">TBD</td>
+              <td><span class="status-planned">Planned</span></td>
+            </tr>
+            <tr>
+              <td>RUNTIME_PALLETS</td>
+              <td class="mono">0x3951D3C715247994d47D9382969cd0082967b258</td>
+              <td><span class="status-live">Deterministic</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Solidity usage -->
+    <h2>Usage from Solidity</h2>
+
+    <p>Call any pallet through the bridge by passing SCALE-encoded call data:</p>
+
+    <div class="panel" style="margin-top:1rem">
+      <div class="panel-title">AssetSwap.sol</div>
+      <div class="panel-body" style="padding:0">
+        <pre><code><span class="cm">// SPDX-License-Identifier: MIT</span>
+<span class="kw">pragma</span> solidity ^0.8.24;
+
+<span class="kw">contract</span> <span class="ty">AssetSwap</span> {
+    <span class="kw">address</span> <span class="kw">public</span> <span class="kw">constant</span> RUNTIME_PALLETS <span class="op">=</span>
+        <span class="num">0x3951D3C715247994d47D9382969cd0082967b258</span>;
+
+    <span class="kw">event</span> <span class="fn">PalletDispatched</span>(<span class="kw">address indexed</span> caller, <span class="kw">bool</span> success, <span class="kw">uint256</span> dataLength);
+
+    <span class="kw">function</span> <span class="fn">dispatchPallet</span>(<span class="kw">bytes calldata</span> scaleCallData)
+        <span class="kw">external</span> <span class="kw">returns</span> (<span class="kw">bool</span> success)
+    {
+        <span class="fn">require</span>(scaleCallData.length <span class="op">&gt;</span> <span class="num">0</span>, <span class="str">"empty call"</span>);
+        (success, ) <span class="op">=</span> RUNTIME_PALLETS.<span class="fn">call</span>(scaleCallData);
+        <span class="kw">emit</span> <span class="fn">PalletDispatched</span>(msg.sender, success, scaleCallData.length);
+    }
+
+    <span class="kw">function</span> <span class="fn">dispatchPalletOrRevert</span>(<span class="kw">bytes calldata</span> scaleCallData) <span class="kw">external</span> {
+        (<span class="kw">bool</span> success, ) <span class="op">=</span> RUNTIME_PALLETS.<span class="fn">call</span>(scaleCallData);
+        <span class="fn">require</span>(success, <span class="str">"pallet dispatch failed"</span>);
+        <span class="kw">emit</span> <span class="fn">PalletDispatched</span>(msg.sender, <span class="kw">true</span>, scaleCallData.length);
+    }
+}</code></pre>
+      </div>
+    </div>
+
+    <p style="margin-top:1rem">Or call <code style="color:var(--accent)">RUNTIME_PALLETS_ADDR</code> directly without the bridge contract:</p>
+
+    <div class="panel" style="margin-top:0.75rem">
+      <div class="panel-title">Direct Call</div>
+      <div class="panel-body" style="padding:0">
+        <pre><code><span class="kw">address constant</span> RUNTIME_PALLETS <span class="op">=</span> <span class="num">0x3951...b258</span>;
+
+<span class="kw">function</span> <span class="fn">directPalletCall</span>(<span class="kw">bytes calldata</span> scaleData) <span class="kw">external</span> {
+    (<span class="kw">bool</span> success, ) <span class="op">=</span> RUNTIME_PALLETS.<span class="fn">call</span>(scaleData);
+    <span class="fn">require</span>(success, <span class="str">"pallet dispatch failed"</span>);
+}</code></pre>
+      </div>
+    </div>
+
+    <!-- Frontend usage -->
+    <h2>Usage from Frontend (PAPI + viem)</h2>
+
+    <p>The frontend encodes the pallet call using PAPI (which has the full runtime metadata), then submits it through a <code style="color:var(--accent)">Revive.call</code> extrinsic.</p>
+
+    <div class="panel" style="margin-top:1rem">
+      <div class="panel-title">TypeScript / PAPI</div>
+      <div class="panel-body" style="padding:0">
+        <pre><code><span class="kw">import</span> { createClient, Binary } <span class="kw">from</span> <span class="str">'polkadot-api'</span>
+<span class="kw">import</span> { getWsProvider } <span class="kw">from</span> <span class="str">'polkadot-api/ws'</span>
+<span class="kw">import</span> { paseo_ah } <span class="kw">from</span> <span class="str">'@polkadot-api/descriptors'</span>
+
+<span class="kw">const</span> client <span class="op">=</span> <span class="fn">createClient</span>(<span class="fn">getWsProvider</span>(<span class="str">'wss://asset-hub-paseo.dotters.network/'</span>))
+<span class="kw">const</span> api <span class="op">=</span> client.<span class="fn">getTypedApi</span>(paseo_ah)
+
+<span class="cm">// Step 1: Encode pallet call as SCALE bytes</span>
+<span class="kw">const</span> swapCall <span class="op">=</span> api.tx.AssetConversion.<span class="fn">swap_exact_tokens_for_tokens</span>({
+  path: [
+    { parents: <span class="num">1</span>, interior: { Here: <span class="kw">undefined</span> } },
+    { parents: <span class="num">0</span>, interior: { X2: [
+      { PalletInstance: <span class="num">50</span> },
+      { GeneralIndex: <span class="num">1984n</span> }
+    ]}}
+  ],
+  amount_in: <span class="num">1_000_000_000_000_000_000n</span>,
+  amount_out_min: <span class="num">0n</span>,
+  send_to: <span class="str">'5GrwvaEF...'</span>,
+  keep_alive: <span class="kw">true</span>,
+})
+
+<span class="kw">const</span> scaleBytes <span class="op">=</span> swapCall.<span class="fn">getEncodedData</span>()
+
+<span class="cm">// Step 2: Submit via Revive.call extrinsic</span>
+<span class="kw">const</span> tx <span class="op">=</span> api.tx.Revive.<span class="fn">call</span>({
+  dest: Binary.<span class="fn">fromHex</span>(<span class="str">'bb5a441bfce51c5b1fd5cd603b87c9787a8ba7b7'</span>),
+  value: <span class="num">0n</span>,
+  gas_limit: { ref_time: <span class="num">500_000_000_000n</span>, proof_size: <span class="num">500_000n</span> },
+  storage_deposit_limit: <span class="num">1_000_000_000_000n</span>,
+  data: Binary.<span class="fn">fromHex</span>(evmCallData),
+})
+
+<span class="kw">await</span> tx.<span class="fn">signAndSubmit</span>(signer)</code></pre>
+      </div>
+    </div>
+
+    <!-- How RUNTIME_PALLETS_ADDR is computed -->
+    <h2>How RUNTIME_PALLETS_ADDR Is Computed</h2>
+
+    <p>The address is derived deterministically and is identical across all pallet-revive deployments:</p>
+
+    <div class="panel" style="margin-top:1rem">
+      <div class="panel-title">Address Derivation</div>
+      <div class="panel-body" style="padding:0">
+        <pre><code><span class="cm"># PalletId = *b"py/paddr"</span>
+<span class="cm"># blake2b_256(b"modl" ++ b"py/paddr" ++ [0u8; 24])[:20]</span>
+<span class="cm"># = 0x3951D3C715247994d47D9382969cd0082967b258</span>
+
+<span class="cm"># Verify in Python:</span>
+<span class="kw">from</span> hashlib <span class="kw">import</span> blake2b
+
+preimage <span class="op">=</span> <span class="str">b"modl"</span> <span class="op">+</span> <span class="str">b"py/paddr"</span> <span class="op">+</span> <span class="fn">bytes</span>(<span class="num">24</span>)
+digest <span class="op">=</span> <span class="fn">blake2b</span>(preimage, digest_size<span class="op">=</span><span class="num">32</span>).<span class="fn">digest</span>()
+evm_address <span class="op">=</span> <span class="str">"0x"</span> <span class="op">+</span> digest[:<span class="num">20</span>].<span class="fn">hex</span>()
+<span class="cm"># => 0x3951d3c715247994d47d9382969cd0082967b258</span></code></pre>
+      </div>
+    </div>
+
+    <!-- Security -->
+    <h2>Security Considerations</h2>
+
+    <ul class="sec-list">
+      <li><strong style="color:var(--fg)">Origin is the contract, not the user.</strong> Pallet calls execute with the contract's Substrate origin, not the end user's.</li>
+      <li><strong style="color:var(--fg)">Permissionless dispatch.</strong> No access control on which pallets can be called. This is by design &mdash; access control belongs in the calling contract.</li>
+      <li><strong style="color:var(--fg)">No SCALE stored on-chain.</strong> Call data is passed through as calldata. Runtime upgrades that change pallet indices do not break the bridge.</li>
+      <li><strong style="color:var(--fg)">Call data validation.</strong> The bridge checks only that the payload is non-empty. Malformed SCALE bytes are rejected by the runtime.</li>
+      <li><strong style="color:var(--fg)">Value transfer.</strong> The bridge does not forward <code style="color:var(--accent)">msg.value</code>. The contract's mapped account must be funded separately.</li>
+    </ul>
+
+    <!-- Deploy on mainnet CTA -->
+    <h2>Deploy on Mainnet</h2>
+
+    <p>
+      The bridge is deployed on <strong style="color:var(--fg)">Paseo Asset Hub</strong> (testnet).
+      Polkadot Asset Hub deployment is planned once pallet-revive is live on mainnet.
+      The contract is permissionless &mdash; anyone can deploy an instance.
+    </p>
+
+    <div class="cta-row">
+      <a href="https://papi.rotko.net/script?code=JTJGJTJGJTIwQXNzZXRTd2FwJTIwQnJpZGdlJTIwRGVtbyUyMCVFMiU4MCU5NCUyMFBhc2VvJTIwQXNzZXQlMjBIdWIlMEElMkYlMkYlMjBFbmNvZGVzJTIwYSUyMHBhbGxldCUyMGNhbGwlMjBhcyUyMFNDQUxFJTIwYnl0ZXMlMjBhbmQlMjBjYWxscyUyMHRoZSUyMGJyaWRnZSUyMGNvbnRyYWN0JTBBJTBBY29uc3QlMjBzaWduZXIlMjAlM0QlMjBjcmVhdGVTaWduZXIoKSUyMCUyMCUyRiUyRiUyMEFsaWNlJTBBJTBBY29uc3QlMjBBU1NFVF9TV0FQJTIwJTNEJTIwJ2JiNWE0NDFiZmNlNTFjNWIxZmQ1Y2Q2MDNiODdjOTc4N2E4YmE3YjcnJTBBJTBBJTJGJTJGJTIwRW5jb2RlJTIwYW4lMjBBc3NldENvbnZlcnNpb24lMjBzd2FwJTIwdmlhJTIwUEFQSSUyMG1ldGFkYXRhJTBBY29uc3QlMjBzd2FwVHglMjAlM0QlMjBhcGkudHguQXNzZXRDb252ZXJzaW9uLnN3YXBfZXhhY3RfdG9rZW5zX2Zvcl90b2tlbnMoJTdCJTBBJTIwJTIwcGF0aCUzQSUyMCU1QiUwQSUyMCUyMCUyMCUyMCU3QiUyMHBhcmVudHMlM0ElMjAwJTJDJTIwaW50ZXJpb3IlM0ElMjAlN0IlMjB0eXBlJTNBJTIwJ0hlcmUnJTJDJTIwdmFsdWUlM0ElMjB1bmRlZmluZWQlMjAlN0QlMjAlN0QlMkMlMEElMjAlMjAlMjAlMjAlN0IlMjBwYXJlbnRzJTNBJTIwMCUyQyUyMGludGVyaW9yJTNBJTIwJTdCJTIwdHlwZSUzQSUyMCdYMiclMkMlMjB2YWx1ZSUzQSUyMCU1QiUwQSUyMCUyMCUyMCUyMCUyMCUyMCU3QiUyMHR5cGUlM0ElMjAnUGFsbGV0SW5zdGFuY2UnJTJDJTIwdmFsdWUlM0ElMjA1MCUyMCU3RCUyQyUwQSUyMCUyMCUyMCUyMCUyMCUyMCU3QiUyMHR5cGUlM0ElMjAnR2VuZXJhbEluZGV4JyUyQyUyMHZhbHVlJTNBJTIwMTk4NG4lMjAlN0QlMkMlMEElMjAlMjAlMjAlMjAlNUQlN0QlN0QlMkMlMEElMjAlMjAlNUQlMkMlMEElMjAlMjBhbW91bnRfaW4lM0ElMjAxXzAwMF8wMDBfMDAwXzAwMG4lMkMlMEElMjAlMjBhbW91bnRfb3V0X21pbiUzQSUyMDBuJTJDJTBBJTIwJTIwc2VuZF90byUzQSUyMCc1R3J3dmFFRjV6WGIyNkZ6OXJjUXBEV1M1N0N0RVJIcE5laFhDUGNOb0hHS3V0UVknJTJDJTBBJTIwJTIwa2VlcF9hbGl2ZSUzQSUyMHRydWUlMkMlMEElN0QpJTBBJTBBY29uc3QlMjBzY2FsZUJ5dGVzJTIwJTNEJTIwc3dhcFR4LmdldEVuY29kZWREYXRhKCklMEFjb25zb2xlLmxvZygnU0NBTEUtZW5jb2RlZCUyMHN3YXAlM0EnJTJDJTIwc2NhbGVCeXRlcy5hc0hleCgpLnNsaWNlKDAlMkMlMjA0MCklMjAlMkIlMjAnLi4uJyklMEElMEElMkYlMkYlMjBCdWlsZCUyMFJldml2ZS5jYWxsJTIwdG8lMjBmb3J3YXJkJTIwdGhyb3VnaCUyMHRoZSUyMGJyaWRnZSUwQWNvbnN0JTIwcmV2aXZlVHglMjAlM0QlMjBhcGkudHguUmV2aXZlLmNhbGwoJTdCJTBBJTIwJTIwZGVzdCUzQSUyMEJpbmFyeS5mcm9tSGV4KEFTU0VUX1NXQVApJTJDJTBBJTIwJTIwdmFsdWUlM0ElMjAwbiUyQyUwQSUyMCUyMGdhc19saW1pdCUzQSUyMCU3QiUyMHJlZl90aW1lJTNBJTIwNTAwXzAwMF8wMDBfMDAwbiUyQyUyMHByb29mX3NpemUlM0ElMjA1MDBfMDAwbiUyMCU3RCUyQyUwQSUyMCUyMHN0b3JhZ2VfZGVwb3NpdF9saW1pdCUzQSUyMDFfMDAwXzAwMF8wMDBfMDAwbiUyQyUwQSUyMCUyMGRhdGElM0ElMjBzY2FsZUJ5dGVzJTJDJTBBJTdEKSUwQSUwQWNvbnNvbGUubG9nKCdCcmlkZ2UlMjBjYWxsJTIwYnVpbHQlMjAlRTIlODAlOTQlMjB0YXJnZXQlM0ElMjAweCclMjAlMkIlMjBBU1NFVF9TV0FQKSUwQWNvbnNvbGUubG9nKCdTdWJtaXQlM0ElMjBhd2FpdCUyMHJldml2ZVR4LnNpZ25BbmRTdWJtaXQoc2lnbmVyKScpJTBB" class="btn btn-primary">
+        Run Demo on Paseo &rarr;
+      </a>
+      <a href="https://github.com/nickkuk/sonotxt/tree/master/contracts" class="btn btn-secondary">
+        View Contract Source
+      </a>
+    </div>
+
+    <!-- footer -->
+    <footer class="footer">
+      <div class="footer-left">
+        sonotxt &mdash; text to speech on polkadot
+      </div>
+      <div class="footer-links">
+        <a href="https://sonotxt.com">sonotxt.com</a>
+        <a href="https://papi.rotko.net">PAPI Console</a>
+        <a href="https://github.com/nickkuk/sonotxt">GitHub</a>
+        <a href="https://github.com/nickkuk/sonotxt/blob/master/docs/pallet-bridge.md">Docs</a>
+      </div>
+    </footer>
+
+  </div>
+</body>
+</html>
