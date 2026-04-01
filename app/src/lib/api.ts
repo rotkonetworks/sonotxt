@@ -1,5 +1,7 @@
 // API service with proper error handling
 
+import { zidAuth } from './zid-auth'
+
 const API = import.meta.env.VITE_API_URL || 'https://api.sonotxt.com'
 
 export class ApiError extends Error {
@@ -17,6 +19,14 @@ export class ApiError extends Error {
       this.message.includes('limit') ||
       this.message.includes('Free tier')
   }
+}
+
+/** build Authorization headers from a legacy token or ZID session */
+export async function authHeaders(token?: string | null): Promise<Record<string, string>> {
+  // prefer explicit token (legacy session)
+  if (token) return { Authorization: `Bearer ${token}` }
+  // fall back to ZID wallet auth
+  return zidAuth.getAuthHeaders()
 }
 
 async function request<T>(
@@ -56,9 +66,11 @@ export interface TtsResponse {
   free_tier_remaining?: number
 }
 
-export async function submitTts(req: TtsRequest): Promise<TtsResponse> {
+export async function submitTts(req: TtsRequest, token?: string | null): Promise<TtsResponse> {
+  const headers = await authHeaders(token)
   return request('/api/tts', {
     method: 'POST',
+    headers,
     body: JSON.stringify(req),
   })
 }
@@ -286,8 +298,7 @@ export interface FreeBalanceResponse {
 }
 
 export async function getFreeBalance(token?: string | null): Promise<FreeBalanceResponse> {
-  const headers: Record<string, string> = {}
-  if (token) headers['Authorization'] = `Bearer ${token}`
+  const headers = await authHeaders(token)
   return request('/api/free-balance', { headers })
 }
 
@@ -419,4 +430,27 @@ export async function lookupUser(
     headers: { Authorization: `Bearer ${token}` },
     body: JSON.stringify(opts),
   })
+}
+
+// ZID wallet auth endpoints
+
+export interface ZidDepositInfo {
+  address: string
+  memo: string
+}
+
+export interface ZidUserInfo {
+  pubkey: string
+  balance: number
+  nickname?: string
+}
+
+export async function zidGetDepositAddress(): Promise<ZidDepositInfo> {
+  const headers = await authHeaders()
+  return request('/api/auth/zid/deposit-address', { headers })
+}
+
+export async function zidGetMe(): Promise<ZidUserInfo> {
+  const headers = await authHeaders()
+  return request('/api/auth/zid/me', { headers })
 }

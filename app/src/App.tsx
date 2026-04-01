@@ -11,6 +11,7 @@ const TextTerminal = lazy(() => import('./components/TextTerminal'))
 const AuthModal = lazy(() => import('./components/AuthModal'))
 const PoolExplorer = lazy(() => import('./components/PoolExplorer'))
 const WalletModal = lazy(() => import('./components/WalletModal'))
+const ZidModal = lazy(() => import('./components/ZidModal'))
 const ProfilePage = lazy(() => import('./components/ProfilePage'))
 const CallPage = lazy(() => import('./components/CallPage'))
 
@@ -41,6 +42,7 @@ export default function App() {
   const [showAuth, setShowAuth] = createSignal(false)
   const [authMode, setAuthMode] = createSignal<'email-login' | 'login'>('email-login')
   const [showWallet, setShowWallet] = createSignal(false)
+  const [showZid, setShowZid] = createSignal(false)
   const [showProfile, setShowProfile] = createSignal(false)
   const [showLoginMenu, setShowLoginMenu] = createSignal(false)
   const [playingId, setPlayingId] = createSignal('')
@@ -99,6 +101,7 @@ export default function App() {
         else if (showProfile()) setShowProfile(false)
         else if (showAuth()) setShowAuth(false)
         else if (showWallet()) setShowWallet(false)
+        else if (showZid()) setShowZid(false)
         else if (showLoginMenu()) setShowLoginMenu(false)
         else if (mode() === 'player' && !(e.target as HTMLElement).matches('input,textarea,select,[contenteditable]')) { setConfirmDelete(false); if (confirmDeleteTimer) { clearTimeout(confirmDeleteTimer); confirmDeleteTimer = undefined }; setMode(prevMode()); return }
         else if (playingId() && currentAudio && mode() !== 'player' && !(e.target as HTMLElement).matches('input,textarea,select,[contenteditable]')) {
@@ -290,6 +293,7 @@ export default function App() {
     actions.login(u, tok)
     setShowAuth(false)
     setShowWallet(false)
+    setShowZid(false)
     actions.loadContacts()
     const rawName = u.nickname || u.email || (u.wallet_address ? u.wallet_address.slice(0, 8) + '...' : 'anon')
     showToast(`Welcome, ${rawName.slice(0, 64)}!`, 'success')
@@ -810,6 +814,13 @@ export default function App() {
                   </button>
                   <button
                     class="w-full px-4 py-2 bg-surface text-fg-muted font-heading text-[10px] uppercase tracking-wider border-2 border-edge hover:text-accent transition-all flex items-center justify-center gap-2"
+                    onClick={() => { setSidebarOpen(false); setShowZid(true) }}
+                  >
+                    <span class="i-mdi-shield-key w-3.5 h-3.5" />
+                    Connect with zafu
+                  </button>
+                  <button
+                    class="w-full px-4 py-2 bg-surface text-fg-muted font-heading text-[10px] uppercase tracking-wider border-2 border-edge hover:text-accent transition-all flex items-center justify-center gap-2"
                     onClick={() => { setSidebarOpen(false); setShowWallet(true) }}
                   >
                     <span class="i-mdi-wallet w-3.5 h-3.5" />
@@ -1238,6 +1249,17 @@ export default function App() {
                     <div>
                       <div class="font-heading uppercase tracking-wider text-[10px]">Nickname + Password</div>
                       <div class="text-[9px] text-fg-faint mt-0.5">Ed25519 key derivation</div>
+                    </div>
+                  </button>
+                  <div class="border-t border-edge-soft" />
+                  <button
+                    class="w-full px-4 py-2.5 text-left text-xs text-fg hover:bg-accent-soft flex items-center gap-2.5 transition-colors"
+                    onClick={() => { setShowLoginMenu(false); setShowZid(true) }}
+                  >
+                    <span class="i-mdi-shield-key w-4 h-4 text-accent" />
+                    <div>
+                      <div class="font-heading uppercase tracking-wider text-[10px]">Connect with zafu</div>
+                      <div class="text-[9px] text-fg-faint mt-0.5">ZID wallet - pay with ZEC</div>
                     </div>
                   </button>
                   <div class="border-t border-edge-soft" />
@@ -1898,6 +1920,11 @@ export default function App() {
           <WalletModal onClose={() => setShowWallet(false)} onLogin={onLogin} />
         </Suspense>
       </Show>
+      <Show when={showZid()}>
+        <Suspense fallback={<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div class="flex items-center gap-1.5"><span class="w-2 h-2 bg-white rounded-full loading-dot" /><span class="w-2 h-2 bg-white rounded-full loading-dot" /><span class="w-2 h-2 bg-white rounded-full loading-dot" /></div></div>}>
+          <ZidModal onClose={() => setShowZid(false)} onLogin={onLogin} />
+        </Suspense>
+      </Show>
       <Show when={showProfile()}>
         <Suspense fallback={<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div class="flex items-center gap-1.5"><span class="w-2 h-2 bg-white rounded-full loading-dot" /><span class="w-2 h-2 bg-white rounded-full loading-dot" /><span class="w-2 h-2 bg-white rounded-full loading-dot" /></div></div>}>
           <ProfilePage onClose={() => setShowProfile(false)} />
@@ -2027,9 +2054,9 @@ export default function App() {
           </div>
           <button
             class="px-3 py-1.5 bg-accent text-white font-heading text-[10px] uppercase tracking-wider border-2 border-accent-strong hover:bg-accent-hover transition-all flex-shrink-0"
-            onClick={() => { setAuthMode('email-login'); setShowAuth(true) }}
+            onClick={() => setShowZid(true)}
           >
-            Sign up
+            Connect
           </button>
           <button
             class="text-fg-faint hover:text-fg p-0.5 flex-shrink-0 transition-colors"
@@ -2054,18 +2081,18 @@ export default function App() {
             <div class="flex border-t-2 border-edge">
               <button
                 class="flex-1 px-4 py-3 bg-accent text-white font-heading text-[10px] uppercase tracking-wider hover:bg-accent-hover transition-colors flex items-center justify-center gap-1.5"
-                onClick={() => { setAuthMode('email-login'); setShowAuth(true) }}
+                onClick={() => setShowZid(true)}
               >
-                <span class="i-mdi-email-outline w-3.5 h-3.5" />
-                Sign up free
+                <span class="i-mdi-shield-key w-3.5 h-3.5" />
+                Connect zafu
               </button>
               <div class="w-[2px] bg-edge" />
               <button
                 class="flex-1 px-4 py-3 bg-surface text-fg-muted font-heading text-[10px] uppercase tracking-wider hover:text-accent transition-colors flex items-center justify-center gap-1.5"
-                onClick={() => setShowWallet(true)}
+                onClick={() => { setAuthMode('email-login'); setShowAuth(true) }}
               >
-                <span class="i-mdi-wallet w-3.5 h-3.5" />
-                Wallet
+                <span class="i-mdi-email-outline w-3.5 h-3.5" />
+                Email login
               </button>
             </div>
           </div>
