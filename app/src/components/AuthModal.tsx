@@ -4,6 +4,7 @@ import { argon2id } from '@noble/hashes/argon2.js'
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js'
 import * as api from '../lib/api'
 import { ApiError } from '../lib/api'
+import { zidAuth } from '../lib/zid-auth'
 
 const KEY_DERIVATION_SALT = new TextEncoder().encode('sonotxt-key-derivation-v1')
 
@@ -14,6 +15,7 @@ interface Props {
 }
 
 type Mode = 'login' | 'register' | 'magic' | 'recover' | 'show-recovery-share' | 'email-login'
+const [showLegacy, setShowLegacy] = createSignal(false)
 
 function splitSecret(secret: Uint8Array): { serverShare: Uint8Array; userShare: Uint8Array } {
   const serverShare = randomBytes(secret.length)
@@ -330,18 +332,49 @@ export default function AuthModal(props: Props) {
         {/* Title bar */}
         <div class="titlebar">
           <span class="i-mdi-account-key w-4 h-4 text-accent" />
-          <span class="text-accent-strong flex-1 font-heading">
-            {mode() === 'email-login' ? 'Sign In' :
-             mode() === 'register' ? 'Create Account' :
-             mode() === 'magic' ? 'Account Recovery' :
-             mode() === 'recover' ? 'Recover Account' :
-             mode() === 'show-recovery-share' ? 'Recovery Words' :
-             'Login'}
-          </span>
+          <span class="text-accent-strong flex-1 font-heading">sign in</span>
           <button onClick={() => { if (!loading()) props.onClose() }} class="text-fg-faint hover:text-accent p-1 transition-colors">
             <span class="i-mdi-close w-4 h-4" />
           </button>
         </div>
+
+        {/* Zafu wallet - primary auth */}
+        <Show when={mode() === 'email-login' && !showLegacy()}>
+          <div class="p-4 flex flex-col gap-3">
+            <button
+              onClick={async () => {
+                try {
+                  const id = await zidAuth.connect()
+                  if (id) {
+                    const me = await api.zidGetMe()
+                    props.onLogin({ id: me.pubkey, balance: me.balance }, 'zid')
+                  }
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : 'failed to connect')
+                }
+              }}
+              disabled={zidAuth.connecting()}
+              class="btn-win primary w-full py-3 flex items-center justify-center gap-2 text-[11px] disabled:opacity-60"
+            >
+              <span class="i-mdi-wallet w-4 h-4" />
+              {zidAuth.connecting() ? 'connecting...' : 'connect with zafu'}
+            </button>
+            <p class="text-[9px] text-fg-faint text-center">
+              no email, no password. your wallet is your identity.
+            </p>
+            <Show when={error()}>
+              <p class="text-[10px] text-red-600">{error()}</p>
+            </Show>
+            <div class="border-t border-edge-soft pt-3 mt-1">
+              <button
+                onClick={() => setShowLegacy(true)}
+                class="bg-transparent border-none text-fg-faint hover:text-accent cursor-pointer text-[9px] transition-colors font-heading uppercase tracking-wider w-full text-center"
+              >
+                other sign-in options
+              </button>
+            </div>
+          </div>
+        </Show>
 
         {/* Show recovery share after registration */}
         <Show when={mode() === 'show-recovery-share'}>
@@ -374,8 +407,8 @@ export default function AuthModal(props: Props) {
           </div>
         </Show>
 
-        {/* Regular forms */}
-        <Show when={mode() !== 'show-recovery-share'}>
+        {/* Legacy forms - shown after "other sign-in options" or non-email modes */}
+        <Show when={mode() !== 'show-recovery-share' && (showLegacy() || mode() !== 'email-login')}>
           <form onSubmit={handleSubmit} class="p-4 flex flex-col gap-3">
             {/* Email login — primary flow */}
             <Show when={mode() === 'email-login'}>
