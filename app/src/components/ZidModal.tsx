@@ -137,7 +137,7 @@ export default function ZidModal(props: Props) {
         <div class="p-3">
           {/* Error */}
           <Show when={error()}>
-            <div class="text-[10px] text-red-600 mb-2 p-2 bg-red-50 border border-red-200">
+            <div class="text-[10px] text-[var(--accent)] mb-2 p-2 bg-[var(--accent-soft)] border border-[var(--border-soft)]">
               {error()}
             </div>
           </Show>
@@ -274,7 +274,7 @@ export default function ZidModal(props: Props) {
                 Refresh
               </button>
               <button
-                class="btn-win flex-1 py-1.5 text-[10px] text-red-600 flex items-center justify-center gap-1"
+                class="btn-win flex-1 py-1.5 text-[10px] text-[var(--accent)] flex items-center justify-center gap-1"
                 onClick={handleDisconnect}
               >
                 <span class="i-mdi-link-off w-3 h-3" />

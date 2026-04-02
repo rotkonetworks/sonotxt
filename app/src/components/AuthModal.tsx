@@ -363,7 +363,7 @@ export default function AuthModal(props: Props) {
               no email, no password. your wallet is your identity.
             </p>
             <Show when={error()}>
-              <p class="text-[10px] text-red-600">{error()}</p>
+              <p class="text-[10px] text-[var(--accent)]">{error()}</p>
             </Show>
             <div class="border-t border-edge-soft pt-3 mt-1">
               <button
@@ -379,20 +379,20 @@ export default function AuthModal(props: Props) {
         {/* Show recovery share after registration */}
         <Show when={mode() === 'show-recovery-share'}>
           <div class="p-4">
-            <div class="bg-amber-50 border-2 border-amber-700 p-3 mb-3">
+            <div class="bg-[var(--accent-soft)] border-2 border-[var(--accent-faint)] p-3 mb-3">
               <div class="flex items-center gap-1.5 mb-2">
-                <span class="i-mdi-shield-alert w-4 h-4 text-amber-700" />
-                <span class="text-xs text-amber-800 font-heading font-semibold uppercase tracking-wider">Save these words</span>
+                <span class="i-mdi-shield-alert w-4 h-4 text-[var(--accent-strong)]" />
+                <span class="text-xs text-[var(--accent-strong)] font-heading font-semibold uppercase tracking-wider">Save these words</span>
               </div>
               <p class="text-[10px] text-fg-muted mb-3">
                 Write these down. You'll need them + your email to recover your account.
               </p>
-              <div class="bg-page border border-edge-soft p-3 font-mono text-xs text-emerald-700 break-words leading-relaxed">
+              <div class="bg-page border border-edge-soft p-3 font-mono text-xs text-[var(--fg)] break-words leading-relaxed">
                 {recoveryShare()}
               </div>
               <button
                 onClick={copyRecoveryShare}
-                class={`btn-win w-full mt-2 text-[10px] ${copiedShare() ? 'bg-emerald-100 text-emerald-800' : ''}`}
+                class={`btn-win w-full mt-2 text-[10px] ${copiedShare() ? 'bg-[var(--accent-soft)] text-[var(--fg)]' : ''}`}
               >
                 {copiedShare() ? 'COPIED!' : 'COPY TO CLIPBOARD'}
               </button>
@@ -445,16 +445,16 @@ export default function AuthModal(props: Props) {
                         <span class="i-mdi-loading w-3.5 h-3.5 text-fg-faint animate-spin" />
                       </Show>
                       <Show when={!nickChecking() && nickAvailable() === true}>
-                        <span class="i-mdi-check-circle w-3.5 h-3.5 text-emerald-600" />
+                        <span class="i-mdi-check-circle w-3.5 h-3.5 text-[var(--fg-muted)]" />
                       </Show>
                       <Show when={!nickChecking() && nickAvailable() === false}>
-                        <span class="i-mdi-close-circle w-3.5 h-3.5 text-red-500" />
+                        <span class="i-mdi-close-circle w-3.5 h-3.5 text-[var(--accent)]" />
                       </Show>
                     </span>
                   </Show>
                 </div>
                 <Show when={mode() === 'register'}>
-                  <p class="text-[9px] mt-1" classList={{ 'text-fg-faint': nickAvailable() !== false, 'text-red-500': nickAvailable() === false }}>
+                  <p class="text-[9px] mt-1" classList={{ 'text-fg-faint': nickAvailable() !== false, 'text-[var(--accent)]': nickAvailable() === false }}>
                     {nickAvailable() === false ? 'Nickname taken' : '3-20 chars, letters/numbers/_/-'}
                   </p>
                 </Show>
@@ -549,15 +549,15 @@ export default function AuthModal(props: Props) {
 
             <Show when={error()}>
               <div class="flex items-start gap-2 bg-red-50 border border-red-200 p-2.5">
-                <span class="i-mdi-alert-circle w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p class="text-red-700 text-[10px]">{error()}</p>
+                <span class="i-mdi-alert-circle w-3.5 h-3.5 text-[var(--accent)] flex-shrink-0 mt-0.5" />
+                <p class="text-[var(--accent)] text-[10px]">{error()}</p>
               </div>
             </Show>
 
             <Show when={message()}>
-              <div class="flex items-start gap-2 bg-emerald-50 border border-emerald-200 p-2.5">
-                <span class="i-mdi-check-circle w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                <p class="text-emerald-700 text-[10px]">{message()}</p>
+              <div class="flex items-start gap-2 bg-[var(--accent-soft)] border border-[var(--border-soft)] p-2.5">
+                <span class="i-mdi-check-circle w-3.5 h-3.5 text-[var(--fg-muted)] flex-shrink-0 mt-0.5" />
+                <p class="text-[var(--fg)] text-[10px]">{message()}</p>
               </div>
             </Show>
 
